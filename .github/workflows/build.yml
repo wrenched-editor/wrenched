@@ -27,5 +27,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: wrenched-${{ matrix.os }}
-          path: target/release/wrenched
+          path: |
+            target/release/wrenched
+            target/release/wrenched.exe
           if-no-files-found: error
