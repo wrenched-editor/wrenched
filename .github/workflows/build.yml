@@ -23,7 +23,7 @@ jobs:
       - name: Install stable
         uses: dtolnay/rust-toolchain@stable
       - name: cargo build --release --all-targets
-        run: cargo build --release --all-targets
+        run: cargo build --release --all-targets --locked
       - uses: actions/upload-artifact@v4
         with:
           name: wrenched-${{ matrix.os }}
