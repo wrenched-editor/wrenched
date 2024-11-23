@@ -11,8 +11,8 @@ concurrency:
   cancel-in-progress: true
 name: build
 jobs:
-  nightly-build:
-    name: rust-nightly build
+  stable-build:
+    name: rust-stable build
     strategy:
       fail-fast: false
       matrix:
