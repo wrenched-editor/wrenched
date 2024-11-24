@@ -11,6 +11,10 @@ winit = "0.30.4"
 xilem = { git = "https://github.com/linebender/xilem", rev = "ee3126139fb162c1f051d8af227f3e88fa615931" }
 masonry = { git = "https://github.com/linebender/xilem", rev = "ee3126139fb162c1f051d8af227f3e88fa615931" }
 accesskit = "0.16"
-smallvec = "1.13"
 tracing = "0.1"
 parley = "0.1"
+eyre = "0.6.12"
+
+[[bin]]
+name = "wrenched"
+path = "app/main.rs"
