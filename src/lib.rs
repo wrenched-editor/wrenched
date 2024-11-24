@@ -5,7 +5,8 @@ use std::{
     fs::{self, File},
     io::BufReader,
     path::{Path, PathBuf},
-    process::{Command, Stdio}, rc::Rc,
+    process::{Command, Stdio},
+    rc::Rc,
 };
 
 use eyre::Result;
