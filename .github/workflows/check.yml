@@ -23,18 +23,18 @@ name: check
 jobs:
   fmt:
     runs-on: ubuntu-latest
-    name: stable / fmt
+    name: nightly / fmt
     steps:
       - uses: actions/checkout@v4
-      - name: Install stable
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install nightly
+        uses: dtolnay/rust-toolchain@nightly
         with:
           components: rustfmt
       - name: cargo fmt --check
         run: cargo fmt --check
 
   clippy:
-    name: stable / clippy
+    name: nightly / clippy
     strategy:
       fail-fast: false
       matrix:
@@ -45,10 +45,10 @@ jobs:
       checks: write
     steps:
       - uses: actions/checkout@v4
-      - name: Install stable
+      - name: Install nightly
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: stable
+          toolchain: nightly
           components: clippy
       - name: cargo clippy
         uses: giraffate/clippy-action@v1

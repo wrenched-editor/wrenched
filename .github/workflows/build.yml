@@ -11,8 +11,8 @@ concurrency:
   cancel-in-progress: true
 name: build
 jobs:
-  stable-build:
-    name: rust-stable build
+  nightly-build:
+    name: rust-nightly build
     strategy:
       fail-fast: false
       matrix:
@@ -20,8 +20,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - name: Install stable
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install nightly
+        uses: dtolnay/rust-toolchain@nightly
       - name: cargo build --release --all-targets
         run: cargo build --release --all-targets --locked
       - uses: actions/upload-artifact@v4
