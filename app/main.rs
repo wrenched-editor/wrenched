@@ -32,10 +32,6 @@ struct Editor {}
 //    buffer.run_shell_command();
 //}
 
-// Copyright 2024 the Xilem Authors
-// SPDX-License-Identifier: Apache-2.0
-
-// On Windows platform, don't show a console when opening the app.
 use winit::error::EventLoopError;
 use xilem::{
     view::{button, checkbox, flex, textbox, Axis, FlexSpacer},
@@ -132,13 +128,6 @@ fn run(event_loop: EventLoopBuilder) -> Result<(), EventLoopError> {
     app.run_windowed(event_loop, "First Example".into())
 }
 
-// Boilerplate code for android: Identical across all applications
-
-#[cfg(not(target_os = "android"))]
-#[allow(dead_code)]
-// This is treated as dead code by the Android version of the example, but is actually live
-// This hackery is required because Cargo doesn't care to support this use case, of one
-// example which works across Android and desktop
 fn main() -> Result<(), EventLoopError> {
     run(EventLoop::with_user_event())
 }
