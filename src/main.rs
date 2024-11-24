@@ -1,16 +1,17 @@
 #![windows_subsystem = "windows"]
 mod buffer {
     use core::ops::Range;
+    use std::{
+        cmp::min,
+        fmt, fs,
+        fs::File,
+        io,
+        io::BufReader,
+        path::PathBuf,
+        process::{Command, Stdio},
+    };
+
     use ropey::Rope;
-    use std::cmp::min;
-    use std::fmt;
-    use std::fs;
-    use std::fs::File;
-    use std::io;
-    use std::io::BufReader;
-    use std::path::PathBuf;
-    use std::process::Command;
-    use std::process::Stdio;
 
     // Point.start always points BEFORE the character, Point.end AFTER the character.
     type Point = Range<usize>;
@@ -237,7 +238,6 @@ struct Command {}
 
 struct Editor {}
 
-use crate::buffer::Buffer;
 use std::path::PathBuf;
 
 //fn main() {
@@ -256,10 +256,13 @@ use std::path::PathBuf;
 // SPDX-License-Identifier: Apache-2.0
 
 // On Windows platform, don't show a console when opening the app.
-
 use winit::error::EventLoopError;
-use xilem::view::{button, checkbox, flex, textbox, Axis, FlexSpacer};
-use xilem::{EventLoop, EventLoopBuilder, WidgetView, Xilem};
+use xilem::{
+    view::{button, checkbox, flex, textbox, Axis, FlexSpacer},
+    EventLoop, EventLoopBuilder, WidgetView, Xilem,
+};
+
+use crate::buffer::Buffer;
 
 struct Task {
     description: String,
