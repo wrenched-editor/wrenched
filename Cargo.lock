@@ -3759,6 +3759,7 @@ dependencies = [
  "masonry",
  "parley",
  "ropey",
+ "smallvec",
  "tracing",
  "vello",
  "winit",

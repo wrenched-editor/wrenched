@@ -14,6 +14,7 @@ accesskit = "0.16"
 tracing = "0.1"
 parley = "0.1"
 eyre = "0.6.12"
+smallvec = "1.13.2"
 
 [[bin]]
 name = "wrenched"
