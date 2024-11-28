@@ -61,7 +61,6 @@ impl TaskList {
 }
 
 fn app_logic(task_list: &mut TaskList) -> impl WidgetView<TaskList> {
-    println!("SDFLSJDLFKJSLDFJLKSJDLFKJSLDJFLSKJDFLSDJFLKJFS\n\nLKSDJFLKJSDLFJSKDJ\nsldfjlskfdjlksjdfkjsldfj");
     let input_box = textbox(
         task_list.next_task.clone(),
         |task_list: &mut TaskList, new_value| {
