@@ -3,15 +3,16 @@ use std::sync::{Arc, Mutex};
 use accesskit::{NodeBuilder, Role};
 use masonry::{
     text::{TextBrush, TextLayout},
-    AccessCtx, AccessEvent, BoxConstraints, EventCtx, LayoutCtx, PaintCtx, Point,
-    PointerEvent, RegisterCtx, Size, TextEvent, Update, UpdateCtx, Widget, WidgetId,
+    AccessCtx, AccessEvent, Affine, BoxConstraints, EventCtx, LayoutCtx, PaintCtx,
+    Point, PointerButton, PointerEvent, RegisterCtx, Size, TextEvent, Update,
+    UpdateCtx, Widget, WidgetId,
 };
 use smallvec::SmallVec;
 use tracing::debug;
-use vello::Scene;
+use vello::{kurbo::Stroke, peniko::Brush, Scene};
 use xilem::{
     core::{Message, MessageResult, View, ViewMarker},
-    Pod, ViewCtx,
+    Color, Pod, ViewCtx,
 };
 
 use crate::{buffer::BufferView, theme::get_theme};
@@ -46,23 +47,96 @@ impl CodeWidget {
 impl Widget for CodeWidget {
     fn on_pointer_event(&mut self, ctx: &mut EventCtx, event: &PointerEvent) {
         debug!("CodeWidget::on_pointer_event: {event:?}");
-        if let PointerEvent::PointerUp(_pointer_button, _pointer_state) = event {
+        if let PointerEvent::PointerDown(PointerButton::Primary, pointer_state) =
+            event
+        {
+            let point = pointer_state.position;
+            let window_origin = ctx.window_origin();
+            debug!("CodeWidget::on_pointer_event; point: {point:?}");
+            let cursor_point = self.text_layout.cursor_for_point(
+                (point.x - window_origin.x, point.y - window_origin.y).into(),
+            );
+            let mut buffer_view = self.buffer_view().lock().unwrap();
+
+            debug!("CodeWidget::on_pointer_event; cursor_point: {cursor_point:?}");
+            buffer_view.set_position_bytes(cursor_point.insert_point);
             ctx.request_focus();
+            ctx.request_paint_only();
             ctx.set_handled();
         }
     }
 
     fn on_text_event(&mut self, ctx: &mut EventCtx, event: &TextEvent) {
         debug!("CodeWidget::on_text_event: {event:?}");
+        macro_rules! process_key {
+            ($action:ident) => {
+                self.text_changed = true;
+                let mut buffer_view = self.buffer_view().lock().unwrap();
+                buffer_view.$action();
+                ctx.request_layout();
+                ctx.set_handled();
+            };
+            ($action:ident, $param:expr) => {
+                self.text_changed = true;
+                let mut buffer_view = self.buffer_view().lock().unwrap();
+                buffer_view.$action($param);
+                ctx.request_layout();
+                ctx.set_handled();
+            };
+        }
         match event {
             TextEvent::KeyboardKey(key_event, _modifiers_state) => {
+                if !key_event.state.is_pressed() {
+                    return;
+                }
                 match &key_event.logical_key {
                     winit::keyboard::Key::Named(named_key) => {
-                        debug!("winit::keyboard::Key::Named: {:?}", named_key)
+                        debug!("winit::keyboard::Key::Named: {:?}", named_key);
+                        match named_key {
+                            winit::keyboard::NamedKey::Enter => {
+                                process_key!(insert_new_line);
+                            }
+                            winit::keyboard::NamedKey::Tab => {
+                                process_key!(insert_at_point, "\t");
+                            }
+                            winit::keyboard::NamedKey::Space => {
+                                process_key!(insert_at_point, " ");
+                            }
+                            winit::keyboard::NamedKey::ArrowUp => {
+                                process_key!(move_point_forward_line);
+                            }
+                            winit::keyboard::NamedKey::ArrowDown => {
+                                process_key!(move_point_backward_line);
+                            }
+                            winit::keyboard::NamedKey::ArrowLeft => {
+                                process_key!(move_point_backward_char);
+                            }
+                            winit::keyboard::NamedKey::ArrowRight => {
+                                process_key!(move_point_forward_char);
+                            }
+                            winit::keyboard::NamedKey::Delete => {
+                                process_key!(delete_at_point);
+                            }
+                            winit::keyboard::NamedKey::Backspace => {
+                                self.text_changed = true;
+                                let mut buffer_view =
+                                    self.buffer_view().lock().unwrap();
+                                buffer_view.move_point_backward_char();
+                                buffer_view.delete_at_point();
+                                ctx.request_layout();
+                                ctx.set_handled();
+                            }
+                            _ => {
+                                debug!(
+                                    "CodeView unimplemented Key::Named: {:?}",
+                                    named_key
+                                )
+                            }
+                        }
                     }
                     winit::keyboard::Key::Character(str) => {
                         debug!("winit::keyboard::Key::Character: {}", str);
-                        ctx.request_paint_only();
+                        process_key!(insert_at_point, str);
                     }
                     winit::keyboard::Key::Unidentified(native_key) => {
                         debug!(
@@ -105,7 +179,14 @@ impl Widget for CodeWidget {
         debug!("CodeWidget::layout: {bc:?}");
         if self.text_layout.needs_rebuild() || self.text_changed {
             let (font_ctx, layout_ctx) = ctx.text_contexts();
-            let text: String = self.buffer_view.lock().unwrap().buffer().rope.slice(..).into();
+            let text: String = self
+                .buffer_view
+                .lock()
+                .unwrap()
+                .buffer()
+                .rope
+                .slice(..)
+                .into();
             self.text_layout
                 .rebuild(font_ctx, layout_ctx, &text, self.text_changed);
             self.text_changed = false;
@@ -123,6 +204,19 @@ impl Widget for CodeWidget {
             );
         }
         self.text_layout.draw(scene, Point::new(0.0, 0.0));
+        let buffer_view = self.buffer_view().lock().unwrap();
+        let line = self
+            .text_layout
+            .caret_line_from_byte_index(buffer_view.position_bytes());
+        if let Some(line) = line {
+            scene.stroke(
+                &Stroke::new(2.),
+                Affine::IDENTITY,
+                &Brush::Solid(Color::WHITE),
+                None,
+                &line,
+            );
+        }
     }
 
     fn accessibility_role(&self) -> Role {

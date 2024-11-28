@@ -26,7 +26,10 @@
 use std::sync::{Arc, Mutex};
 
 use winit::error::EventLoopError;
-use wrenched::{buffer::{Buffer, BufferView}, code_widget::code_view};
+use wrenched::{
+    buffer::{Buffer, BufferView},
+    code_widget::code_view,
+};
 use xilem::{
     view::{button, checkbox, flex, textbox, Axis},
     EventLoop, EventLoopBuilder, WidgetView, Xilem,
@@ -94,14 +97,14 @@ fn app_logic(task_list: &mut TaskList) -> impl WidgetView<TaskList> {
             flex((checkbox, delete_button)).direction(Axis::Horizontal)
         })
         .collect::<Vec<_>>();
-    let code_view = code_view(&task_list.buffer_view, |_s: &mut TaskList|{});
+    let code_view = code_view(&task_list.buffer_view, |_s: &mut TaskList| {});
 
     flex((first_line, tasks, code_view))
 }
 
 fn run(event_loop: EventLoopBuilder) -> Result<(), EventLoopError> {
-    let buffer= Arc::new(Mutex::new(Buffer::from_string("super cool text")));
-    let buffer_view= Arc::new(Mutex::new(BufferView::new(&buffer)));
+    let buffer = Arc::new(Mutex::new(Buffer::from_string("super cool text")));
+    let buffer_view = Arc::new(Mutex::new(BufferView::new(&buffer)));
     let data = TaskList {
         // Add a placeholder task for Android, whilst the
         next_task: "My Next Task".into(),
@@ -121,7 +124,6 @@ fn run(event_loop: EventLoopBuilder) -> Result<(), EventLoopError> {
         ],
         buffer,
         buffer_view,
-
     };
 
     let app = Xilem::new(data, app_logic);

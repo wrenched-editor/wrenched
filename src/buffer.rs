@@ -10,18 +10,32 @@ use std::{
 
 use eyre::Result;
 use ropey::Rope;
-
+use tracing::debug;
 
 // TODO: Do something about `unwrap`s
 
 // Point.start always points BEFORE the character, Point.end AFTER the character.
 pub type Point = Range<usize>;
 
+#[derive(Debug, Clone)]
+pub enum NewLineStyle {
+    LF,
+    CRLF,
+}
+
+impl Default for NewLineStyle {
+    fn default() -> Self {
+        NewLineStyle::LF
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Buffer {
     path: Option<PathBuf>,
     pub rope: Rope,
     is_modified: bool,
+    new_line_style: NewLineStyle,
+    // TODO: Add tab to spaces mapping here!!!
 }
 
 impl Buffer {
@@ -30,6 +44,7 @@ impl Buffer {
             path: None,
             is_modified: false,
             rope: Rope::new(),
+            new_line_style: NewLineStyle::default(),
         }
     }
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Buffer> {
@@ -41,6 +56,7 @@ impl Buffer {
             path: Some(path.as_ref().to_path_buf()),
             is_modified: false,
             rope,
+            new_line_style: NewLineStyle::default(),
         })
     }
 
@@ -50,6 +66,7 @@ impl Buffer {
             path: None,
             is_modified: false,
             rope,
+            new_line_style: NewLineStyle::default(),
         }
     }
 
@@ -87,6 +104,7 @@ impl BufferView {
             buffer: buffer.clone(),
         }
     }
+
     pub fn move_point_forward_char(&mut self) {
         if self.point.end < self.buffer.lock().unwrap().rope.len_chars() {
             self.point.end += 1;
@@ -102,7 +120,12 @@ impl BufferView {
     }
 
     pub fn move_point_end_of_line(&mut self) {
-        let line_idx = self.buffer.lock().unwrap().rope.char_to_line(self.point.end);
+        let line_idx = self
+            .buffer
+            .lock()
+            .unwrap()
+            .rope
+            .char_to_line(self.point.end);
         let idx = if line_idx == 0 {
             self.buffer.lock().unwrap().rope.len_chars()
         } else {
@@ -111,13 +134,20 @@ impl BufferView {
         self.point.start = idx;
         self.point.end = idx;
     }
+
     pub fn move_point_start_of_line(&mut self) {
-        let line_idx = self.buffer.lock().unwrap().rope.char_to_line(self.point.start);
+        let line_idx = self
+            .buffer
+            .lock()
+            .unwrap()
+            .rope
+            .char_to_line(self.point.start);
         self.goto_line(line_idx);
     }
-    pub fn move_point_forward_line() {} // TODO: These two have to take into account "visual lines"
-                                        // if a line is wrapped and is rendered as two lines, do we move to the next real line or visual line?
-    pub fn move_point_backward_line() {}
+
+    pub fn move_point_forward_line(&mut self) {} // TODO: These two have to take into account "visual lines"
+                                                 // if a line is wrapped and is rendered as two lines, do we move to the next real line or visual line?
+    pub fn move_point_backward_line(&mut self) {}
 
     pub fn goto_char(&mut self, char_idx: usize) {
         let idx = min(char_idx, self.buffer.lock().unwrap().rope.len_chars());
@@ -126,17 +156,19 @@ impl BufferView {
     }
 
     pub fn goto_line(&mut self, line_idx: usize) {
-        let buffer = self .buffer .lock().unwrap();
+        let buffer = self.buffer.lock().unwrap();
         let idx = buffer
             .rope
             .line_to_char(min(buffer.rope.len_lines(), line_idx));
         self.point.start = idx;
         self.point.end = idx;
     }
+
     pub fn goto_end_of_buffer(&mut self) {
-        let len = { self .buffer .lock().unwrap().rope.len_chars() };
+        let len = { self.buffer.lock().unwrap().rope.len_chars() };
         self.goto_char(len);
     }
+
     pub fn goto_start_of_buffer(&mut self) {
         self.goto_char(0);
     }
@@ -157,6 +189,21 @@ impl BufferView {
         buffer.is_modified = true;
         // TODO: Selection, multiple points, create undo records, ...
     }
+
+    // TODO: Think about this function and it's purpose
+    pub fn insert_new_line(&mut self) {
+        let mut buffer = self.buffer.lock().unwrap();
+        let new_line_text = match buffer.new_line_style {
+            NewLineStyle::LF => "\n",
+            NewLineStyle::CRLF => "\r\n",
+        };
+        buffer.rope.insert(self.point.start, new_line_text);
+        let off = Rope::from(new_line_text).len_chars();
+        self.point.start += off;
+        self.point.end = self.point.start;
+        buffer.is_modified = true;
+    }
+
     pub fn delete_at_point(&mut self) {
         // Delete, not backspace. For now.
         let p = &self.point;
@@ -170,6 +217,19 @@ impl BufferView {
         buffer.rope.remove(p.start..to);
         buffer.is_modified = true;
     }
+
+    pub fn position_bytes(&self) -> usize {
+        let buffer = self.buffer.lock().unwrap();
+        buffer.rope.char_to_byte(self.point.start)
+    }
+
+    pub fn set_position_bytes(&mut self, byte: usize) {
+        let buffer = self.buffer.lock().unwrap();
+        let start = buffer.rope.byte_to_char(byte);
+        self.point.start = start;
+        debug!("set_position_bytes start: {start}; {byte}");
+    }
+
     // TODO: Write this in a way that we can have multiple undo implementations: simple undo/redo stack, undo tree, etc.
     pub fn undo() {}
     pub fn redo() {}
