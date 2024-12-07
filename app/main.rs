@@ -23,9 +23,11 @@
 //    buffer.run_shell_command();
 //}
 
-use std::sync::{Arc, Mutex};
+use std::{
+    fs::read_to_string,
+    sync::{Arc, Mutex},
+};
 
-use winit::error::EventLoopError;
 use wrenched::{
     buffer::{Buffer, BufferView},
     code_widget::code_view,
@@ -46,6 +48,7 @@ struct TaskList {
     #[allow(dead_code)]
     buffer: Arc<Mutex<Buffer>>,
     buffer_view: Arc<Mutex<BufferView>>,
+    long_string: String,
 }
 
 impl TaskList {
@@ -101,8 +104,10 @@ fn app_logic(task_list: &mut TaskList) -> impl WidgetView<TaskList> {
     flex((first_line, tasks, code_view))
 }
 
-fn run(event_loop: EventLoopBuilder) -> Result<(), EventLoopError> {
-    let buffer = Arc::new(Mutex::new(Buffer::from_string("super cool text")));
+fn run(event_loop: EventLoopBuilder) -> eyre::Result<()> {
+    let buffer = Arc::new(Mutex::new(Buffer::load("./text.txt")?));
+    let long_string = read_to_string("./text.txt")?;
+    //let buffer = Arc::new(Mutex::new(Buffer::from_string("super cool text")));
     let buffer_view = Arc::new(Mutex::new(BufferView::new(&buffer)));
     let data = TaskList {
         // Add a placeholder task for Android, whilst the
@@ -123,12 +128,15 @@ fn run(event_loop: EventLoopBuilder) -> Result<(), EventLoopError> {
         ],
         buffer,
         buffer_view,
+        long_string,
     };
 
     let app = Xilem::new(data, app_logic);
-    app.run_windowed(event_loop, "First Example".into())
+    app.run_windowed(event_loop, "First Example".into())?;
+    Ok(())
 }
 
-fn main() -> Result<(), EventLoopError> {
+fn main() -> eyre::Result<()> {
+    color_backtrace::install();
     run(EventLoop::with_user_event())
 }

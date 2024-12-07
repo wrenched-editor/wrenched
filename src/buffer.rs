@@ -17,16 +17,11 @@ use tracing::debug;
 // Point.start always points BEFORE the character, Point.end AFTER the character.
 pub type Point = Range<usize>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum NewLineStyle {
+    #[default]
     LF,
     CRLF,
-}
-
-impl Default for NewLineStyle {
-    fn default() -> Self {
-        NewLineStyle::LF
-    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -258,7 +253,7 @@ impl BufferView {
         Ok(())
     }
 
-    pub fn buffer<'a>(&'a self) -> std::sync::MutexGuard<'a, Buffer> {
+    pub fn buffer(&self) -> std::sync::MutexGuard<'_, Buffer> {
         self.buffer.lock().unwrap()
     }
 }

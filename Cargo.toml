@@ -4,17 +4,22 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-ropey = "1.6.1"
-crop = { version = "0.4.2", features = ["graphemes"] }
-vello = "0.2.1"
-winit = "0.30.4"
-xilem = { git = "https://github.com/linebender/xilem", rev = "ee3126139fb162c1f051d8af227f3e88fa615931" }
-masonry = { git = "https://github.com/linebender/xilem", rev = "ee3126139fb162c1f051d8af227f3e88fa615931" }
-accesskit = "0.16"
+ropey = "1.6"
+crop = { version = "0.4", features = ["graphemes"] }
+vello = "0.3"
+winit = "0.30"
+xilem = { git = "https://github.com/linebender/xilem", rev = "1eaff8f0fd75cb42436b4265a2262023a94fffdd" }
+masonry = { git = "https://github.com/linebender/xilem", rev = "1eaff8f0fd75cb42436b4265a2262023a94fffdd" }
+accesskit = "0.17"
 tracing = "0.1"
-parley = "0.1"
-eyre = "0.6.12"
-smallvec = "1.13.2"
+parley = { git = "https://github.com/linebender/parley", rev = "c0d158b5d77c5726ed33fd3f2cbfcde95df374ef", features = ["accesskit"] }
+
+eyre = "0.6"
+smallvec = "1.13"
+color-backtrace = { version = "0.6", default-features = false }
+tracing-subscriber = "0.3"
+peniko = "0.2"
+kurbo = "0.11"
 
 [[bin]]
 name = "wrenched"

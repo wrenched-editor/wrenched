@@ -1,35 +1,29 @@
-use std::sync::{Arc, Mutex};
+use std::{sync::{Arc, Mutex}, time::SystemTime};
 
-use accesskit::{NodeBuilder, Role};
+use accesskit::{Node, Role};
+use kurbo::Vec2;
 use masonry::{
-    text::{TextBrush, TextLayout},
-    AccessCtx, AccessEvent, Affine, BoxConstraints, EventCtx, LayoutCtx, PaintCtx,
-    Point, PointerButton, PointerEvent, RegisterCtx, Size, TextEvent, Update,
-    UpdateCtx, Widget, WidgetId,
+    vello::Scene, AccessCtx, AccessEvent, BoxConstraints, EventCtx, LayoutCtx, PaintCtx, Point, PointerButton, PointerEvent, RegisterCtx, Size, TextEvent, Update, UpdateCtx, Widget, WidgetId
 };
 use smallvec::SmallVec;
 use tracing::debug;
-use vello::{kurbo::Stroke, peniko::Brush, Scene};
 use xilem::{
     core::{Message, MessageResult, View, ViewMarker},
-    Color, Pod, ViewCtx,
+    Pod, ViewCtx,
 };
 
-use crate::{buffer::BufferView, theme::get_theme};
+use crate::{buffer::BufferView, code_text_layout::CodeTextLayout};
 
 pub struct CodeWidget {
     text_changed: bool,
-    text_layout: TextLayout,
+    text_layout: CodeTextLayout,
     buffer_view: Arc<Mutex<BufferView>>,
     wrap_word: bool,
 }
 
 impl CodeWidget {
     pub fn new(buffer_view: &Arc<Mutex<BufferView>>) -> Self {
-        let theme = get_theme();
-        let mut text_layout = TextLayout::new(theme.text_size as f32);
-        let brush: TextBrush = theme.text_color.into();
-        text_layout.set_brush(brush);
+        let text_layout = CodeTextLayout::new();
         Self {
             text_changed: false,
             text_layout,
@@ -59,8 +53,12 @@ impl Widget for CodeWidget {
             let mut buffer_view = self.buffer_view().lock().unwrap();
 
             debug!("CodeWidget::on_pointer_event; cursor_point: {cursor_point:?}");
-            buffer_view.set_position_bytes(cursor_point.insert_point);
+            buffer_view.set_position_bytes(cursor_point.index());
             ctx.request_focus();
+            ctx.request_paint_only();
+            ctx.set_handled();
+        } else if let PointerEvent::MouseWheel(delta, _) = event {
+            self.text_layout.scroll(Vec2::new(delta.x, delta.y));
             ctx.request_paint_only();
             ctx.set_handled();
         }
@@ -175,58 +173,28 @@ impl Widget for CodeWidget {
         debug!("CodeWidget::update: {event:?}");
     }
 
-    fn layout(&mut self, ctx: &mut LayoutCtx, bc: &BoxConstraints) -> Size {
-        debug!("CodeWidget::layout: {bc:?}");
-        if self.text_layout.needs_rebuild() || self.text_changed {
-            let (font_ctx, layout_ctx) = ctx.text_contexts();
-            let text: String = self
-                .buffer_view
-                .lock()
-                .unwrap()
-                .buffer()
-                .rope
-                .slice(..)
-                .into();
-            self.text_layout
-                .rebuild(font_ctx, layout_ctx, &text, self.text_changed);
-            self.text_changed = false;
-        }
-
-        bc.max()
+    fn layout(&mut self, _ctx: &mut LayoutCtx, bc: &BoxConstraints) -> Size {
+        let text: String = self.buffer_view .lock() .unwrap() .buffer() .rope .slice(..) .into();
+        let size = bc.max();
+        self.text_layout.set_max_advance(Some(size.width as f32));
+        let start = SystemTime::now();
+        self.text_layout.rebuild_with_attributes(&text, |b|b);
+        let since_the_epoch = start
+        .elapsed()
+        .expect("Time went backwards");
+        println!("KLAKJSLDKAJSLKJSAD: {:?}", since_the_epoch);
+        size
     }
 
-    fn paint(&mut self, _ctx: &mut PaintCtx, scene: &mut Scene) {
+    fn paint(&mut self, ctx: &mut PaintCtx, scene: &mut Scene) {
         debug!("CodeWidget::paint");
-        if self.text_layout.needs_rebuild() {
-            panic!(
-                "Called {name}::paint with invalid layout",
-                name = self.short_type_name()
-            );
-        }
-        self.text_layout.draw(scene, Point::new(0.0, 0.0));
-        let buffer_view = self.buffer_view().lock().unwrap();
-        let line = self
-            .text_layout
-            .caret_line_from_byte_index(buffer_view.position_bytes());
-        if let Some(line) = line {
-            scene.stroke(
-                &Stroke::new(2.),
-                Affine::IDENTITY,
-                &Brush::Solid(Color::WHITE),
-                None,
-                &line,
-            );
-        }
+        let position={
+            let buffer_view = self.buffer_view().lock().unwrap();
+            buffer_view.position_bytes()
+        };
+        self.text_layout.draw(scene, position, ctx.size());
     }
 
-    fn accessibility_role(&self) -> Role {
-        Role::TextInput
-    }
-
-    fn accessibility(&mut self, _ctx: &mut AccessCtx, _node: &mut NodeBuilder) {
-        debug!("CodeWidget::accessibility");
-        // node.set_name(???);
-    }
 
     fn children_ids(&self) -> SmallVec<[WidgetId; 16]> {
         debug!("CodeWidget::children_ids");
@@ -266,6 +234,15 @@ impl Widget for CodeWidget {
     ) -> masonry::CursorIcon {
         debug!("CodeWidget::get_cursor: {pos:?}");
         masonry::CursorIcon::Text
+    }
+
+    fn accessibility_role(&self) -> Role {
+        debug!("CodeWidget::accessibility_role");
+        Role::TextInput
+    }
+
+    fn accessibility(&mut self, _ctx: &mut AccessCtx, _node: &mut Node) {
+        debug!("CodeWidget::accessibility");
     }
 }
 
