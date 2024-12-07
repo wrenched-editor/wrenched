@@ -25,7 +25,7 @@
 
 use std::{
     fs::read_to_string,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex}, time::Instant,
 };
 
 use wrenched::{
@@ -105,7 +105,10 @@ fn app_logic(task_list: &mut TaskList) -> impl WidgetView<TaskList> {
 }
 
 fn run(event_loop: EventLoopBuilder) -> eyre::Result<()> {
+    let now = Instant::now();
     let buffer = Arc::new(Mutex::new(Buffer::load("./text.txt")?));
+    let duration = now.elapsed();
+    println!("parsing text time: {}s", duration.as_secs_f32());
     let long_string = read_to_string("./text.txt")?;
     //let buffer = Arc::new(Mutex::new(Buffer::from_string("super cool text")));
     let buffer_view = Arc::new(Mutex::new(BufferView::new(&buffer)));

@@ -1,4 +1,4 @@
-use std::{sync::{Arc, Mutex}, time::SystemTime};
+use std::{sync::{Arc, Mutex}, time::{Instant, SystemTime}};
 
 use accesskit::{Node, Role};
 use kurbo::Vec2;
@@ -177,12 +177,11 @@ impl Widget for CodeWidget {
         let text: String = self.buffer_view .lock() .unwrap() .buffer() .rope .slice(..) .into();
         let size = bc.max();
         self.text_layout.set_max_advance(Some(size.width as f32));
-        let start = SystemTime::now();
+        let start = Instant::now();
         self.text_layout.rebuild_with_attributes(&text, |b|b);
         let since_the_epoch = start
-        .elapsed()
-        .expect("Time went backwards");
-        println!("KLAKJSLDKAJSLKJSAD: {:?}", since_the_epoch);
+        .elapsed();
+        println!("Time of text layouting: {:?}s", since_the_epoch.as_secs_f32());
         size
     }
 
