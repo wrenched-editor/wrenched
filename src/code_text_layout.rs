@@ -5,7 +5,7 @@ use parley::{
     fontique::{Collection, CollectionOptions, Style},
     layout::Cursor,
     style::{FontFamily, GenericFamily, StyleProperty},
-    Decoration, FontContext, FontStack, GlyphRun, Layout, LayoutContext,
+    Cluster, Decoration, FontContext, FontStack, GlyphRun, Layout, LayoutContext,
     LineMetrics, PositionedLayoutItem, RangedBuilder, RunMetrics,
 };
 use peniko::BlendMode;
@@ -164,6 +164,7 @@ impl CodeTextLayout {
         underline: &Decoration<CodeTextBrush>,
         glyph_run: &GlyphRun<'_, CodeTextBrush>,
         run_metrics: &RunMetrics,
+        transform: &Affine,
     ) {
         let offset = underline.offset.unwrap_or(run_metrics.underline_offset);
         let stroke_size = underline.size.unwrap_or(run_metrics.underline_size);
@@ -184,7 +185,7 @@ impl CodeTextLayout {
 
         scene.stroke(
             &stroke,
-            Affine::IDENTITY,
+            *transform,
             &underline.brush.text,
             Some(Affine::IDENTITY),
             &underline_shape,
@@ -233,6 +234,7 @@ impl CodeTextLayout {
         glyph_run: &GlyphRun<'_, CodeTextBrush>,
         run_metrics: &RunMetrics,
         line_metrics: &LineMetrics,
+        transform: &Affine,
     ) {
         let offset = underline.offset.unwrap_or(run_metrics.underline_offset) as f64;
         let stroke_size =
@@ -255,14 +257,14 @@ impl CodeTextLayout {
         scene.push_layer(
             BlendMode::default(),
             1.,
-            Affine::IDENTITY,
+            *transform,
             &Rect::new(left, y_top, right, y_bottom),
         );
         let curly_path = Self::curly_path(left, right, y_top, y_bottom, 0.0);
 
         scene.stroke(
             &stroke,
-            Affine::IDENTITY,
+            *transform,
             &underline.brush.text,
             Some(Affine::IDENTITY),
             &curly_path,
@@ -271,15 +273,51 @@ impl CodeTextLayout {
         scene.pop_layer();
     }
 
+    fn draw_strikethrough(
+        scene: &mut Scene,
+        strikethrough: &Decoration<CodeTextBrush>,
+        glyph_run: &GlyphRun<'_, CodeTextBrush>,
+        run_metrics: &RunMetrics,
+        transform: &Affine,
+    ) {
+        let offset = strikethrough
+            .offset
+            .unwrap_or(run_metrics.strikethrough_offset);
+        let size = strikethrough.size.unwrap_or(run_metrics.strikethrough_size);
+        // FIXME: This offset looks fishy... I think I should add it instead.
+        let y1 = glyph_run.baseline() - offset - (size / 2.0);
+        let x1 = glyph_run.offset();
+        let x2 = x1 + glyph_run.advance();
+        let strikethrough_shape = Line::new((x1, y1), (x2, y1));
+
+        let stroke = Stroke {
+            width: size as f64,
+            join: Join::Bevel,
+            miter_limit: 4.0,
+            start_cap: Cap::Butt,
+            end_cap: Cap::Butt,
+            dash_pattern: Default::default(),
+            dash_offset: 0.0,
+        };
+
+        scene.stroke(
+            &stroke,
+            *transform,
+            &strikethrough.brush.text,
+            Some(Affine::IDENTITY),
+            &strikethrough_shape,
+        );
+    }
+
     pub fn draw(&mut self, scene: &mut Scene, cursor_position: usize, size: Size) {
         let cursor = Cursor::from_byte_index(
             &self.layout,
             cursor_position,
             parley::Affinity::Upstream,
         );
-        let transform = Affine::IDENTITY;
         let cursor_rect = cursor.geometry(&self.layout, 1.5);
         println!("self.scroll: {}", self.scroll);
+        let transform = Affine::translate((0.0, -self.scroll));
         // TODO: Selection
         scene.fill(Fill::NonZero, transform, Color::WHITE, None, &cursor_rect);
         scene.push_layer(
@@ -288,14 +326,20 @@ impl CodeTextLayout {
             Affine::IDENTITY,
             &size.to_rect(),
         );
-        for line in self.layout.lines() {
+
+        let mut top_line_index = if let Some((cluster, _)) =
+            Cluster::from_point(&self.layout, 0.0, self.scroll as f32)
+        {
+            cluster.path().line_index()
+        } else {
+            0
+        };
+
+        let height = (self.scroll + size.height) as f32;
+
+        while let Some(line) = self.layout.get(top_line_index) {
             let line_metrics = line.metrics();
-            let up = line_metrics.baseline + line_metrics.ascent;
-            let down = line_metrics.baseline + line_metrics.descent;
-            if (down as f64) < self.scroll {
-                continue;
-            }
-            if (up as f64) > self.scroll + size.height {
+            if line_metrics.min_coord > height {
                 break;
             }
             for item in line.items() {
@@ -345,6 +389,7 @@ impl CodeTextLayout {
                             &glyph_run,
                             run_metrics,
                             line_metrics,
+                            &transform,
                         );
                     } else {
                         Self::draw_underline(
@@ -352,41 +397,22 @@ impl CodeTextLayout {
                             underline,
                             &glyph_run,
                             run_metrics,
+                            &transform,
                         );
                     }
                 }
 
                 if let Some(strikethrough) = &style.strikethrough {
-                    let offset = strikethrough
-                        .offset
-                        .unwrap_or(run_metrics.strikethrough_offset);
-                    let size =
-                        strikethrough.size.unwrap_or(run_metrics.strikethrough_size);
-                    // FIXME: This offset looks fishy... I think I should add it instead.
-                    let y1 = glyph_run.baseline() - offset - (size / 2.0);
-                    let x1 = glyph_run.offset();
-                    let x2 = x1 + glyph_run.advance();
-                    let strikethrough_shape = Line::new((x1, y1), (x2, y1));
-
-                    let stroke = Stroke {
-                        width: size as f64,
-                        join: Join::Bevel,
-                        miter_limit: 4.0,
-                        start_cap: Cap::Butt,
-                        end_cap: Cap::Butt,
-                        dash_pattern: Default::default(),
-                        dash_offset: 0.0,
-                    };
-
-                    scene.stroke(
-                        &stroke,
-                        Affine::IDENTITY,
-                        &strikethrough.brush.text,
-                        Some(Affine::IDENTITY),
-                        &strikethrough_shape,
+                    Self::draw_strikethrough(
+                        scene,
+                        strikethrough,
+                        &glyph_run,
+                        run_metrics,
+                        &transform,
                     );
                 }
             }
+            top_line_index += 1;
         }
         scene.pop_layer();
     }
