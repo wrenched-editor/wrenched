@@ -24,8 +24,8 @@
 //}
 
 use std::{
-    fs::read_to_string,
-    sync::{Arc, Mutex}, time::Instant,
+    sync::{Arc, Mutex},
+    time::Instant,
 };
 
 use wrenched::{
@@ -48,7 +48,6 @@ struct TaskList {
     #[allow(dead_code)]
     buffer: Arc<Mutex<Buffer>>,
     buffer_view: Arc<Mutex<BufferView>>,
-    long_string: String,
 }
 
 impl TaskList {
@@ -109,7 +108,6 @@ fn run(event_loop: EventLoopBuilder) -> eyre::Result<()> {
     let buffer = Arc::new(Mutex::new(Buffer::load("./text.txt")?));
     let duration = now.elapsed();
     println!("parsing text time: {}s", duration.as_secs_f32());
-    let long_string = read_to_string("./text.txt")?;
     //let buffer = Arc::new(Mutex::new(Buffer::from_string("super cool text")));
     let buffer_view = Arc::new(Mutex::new(BufferView::new(&buffer)));
     let data = TaskList {
@@ -131,7 +129,6 @@ fn run(event_loop: EventLoopBuilder) -> eyre::Result<()> {
         ],
         buffer,
         buffer_view,
-        long_string,
     };
 
     let app = Xilem::new(data, app_logic);

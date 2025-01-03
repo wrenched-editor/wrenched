@@ -1,8 +1,8 @@
-use std::sync::{LazyLock, Mutex, MutexGuard};
+use std::sync::{LazyLock, RwLock, RwLockReadGuard};
 
 use vello::peniko::Color;
 
-static THEME: LazyLock<Mutex<Theme>> = LazyLock::new(|| Mutex::new(Theme::new()));
+static THEME: LazyLock<RwLock<Theme>> = LazyLock::new(|| RwLock::new(Theme::new()));
 
 #[derive(Debug, Clone, Default)]
 pub struct Theme {
@@ -15,12 +15,12 @@ impl Theme {
     pub fn new() -> Theme {
         Theme {
             text_color: Color::rgb8(0xf0, 0xf0, 0xea),
-            text_size: 12,
+            text_size: 16,
             scale: 1.0,
         }
     }
 }
 
-pub fn get_theme<'a>() -> MutexGuard<'a, Theme> {
-    (*THEME).lock().unwrap()
+pub fn get_theme<'a>() -> RwLockReadGuard<'a, Theme> {
+    (*THEME).read().unwrap()
 }

@@ -1000,6 +1000,28 @@ dependencies = [
 [[package]]
 name = "fontique"
 version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b008f3607a8e8935b2607eef514164b8223020614c8ad684434a0cd668d280c"
+dependencies = [
+ "core-foundation",
+ "core-text",
+ "fontconfig-cache-parser",
+ "hashbrown 0.14.5",
+ "icu_locid",
+ "memmap2",
+ "objc2",
+ "objc2-foundation",
+ "peniko",
+ "roxmltree",
+ "skrifa",
+ "smallvec",
+ "windows 0.58.0",
+ "windows-core 0.58.0",
+]
+
+[[package]]
+name = "fontique"
+version = "0.2.0"
 source = "git+https://github.com/linebender/parley?rev=c0d158b5d77c5726ed33fd3f2cbfcde95df374ef#c0d158b5d77c5726ed33fd3f2cbfcde95df374ef"
 dependencies = [
  "core-foundation",
@@ -2032,7 +2054,7 @@ version = "0.2.0"
 source = "git+https://github.com/linebender/parley?rev=c0d158b5d77c5726ed33fd3f2cbfcde95df374ef#c0d158b5d77c5726ed33fd3f2cbfcde95df374ef"
 dependencies = [
  "accesskit",
- "fontique",
+ "fontique 0.2.0 (git+https://github.com/linebender/parley?rev=c0d158b5d77c5726ed33fd3f2cbfcde95df374ef)",
  "hashbrown 0.15.1",
  "peniko",
  "skrifa",
@@ -3670,10 +3692,12 @@ dependencies = [
  "color-backtrace",
  "crop",
  "eyre",
+ "fontique 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "kurbo",
  "masonry",
  "parley",
  "peniko",
+ "rand",
  "ropey",
  "smallvec",
  "tracing",

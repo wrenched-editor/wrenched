@@ -1,18 +1,28 @@
-use std::{sync::{Arc, Mutex}, time::{Instant, SystemTime}};
+use std::{
+    sync::{Arc, Mutex},
+    time::Instant,
+};
 
 use accesskit::{Node, Role};
 use kurbo::Vec2;
 use masonry::{
-    vello::Scene, AccessCtx, AccessEvent, BoxConstraints, EventCtx, LayoutCtx, PaintCtx, Point, PointerButton, PointerEvent, RegisterCtx, Size, TextEvent, Update, UpdateCtx, Widget, WidgetId
+    vello::Scene, AccessCtx, AccessEvent, BoxConstraints, EventCtx, LayoutCtx,
+    PaintCtx, Point, PointerButton, PointerEvent, RegisterCtx, Size, TextEvent,
+    Update, UpdateCtx, Widget, WidgetId,
 };
+use parley::StyleProperty;
 use smallvec::SmallVec;
 use tracing::debug;
+use vello::peniko::Color;
 use xilem::{
     core::{Message, MessageResult, View, ViewMarker},
-    Pod, ViewCtx,
+    Pod, TextWeight, ViewCtx,
 };
 
-use crate::{buffer::BufferView, code_text_layout::CodeTextLayout};
+use crate::{
+    buffer::BufferView,
+    code_text_layout::{CodeTextBrush, CodeTextLayout},
+};
 
 pub struct CodeWidget {
     text_changed: bool,
@@ -36,6 +46,19 @@ impl CodeWidget {
         &self.buffer_view
     }
 }
+
+// TODO: List of decorations for code editor:
+//
+// * Text color
+// * BG color
+// * Bold
+// * Underline in color
+// * Ghost text
+// * Syntax
+//   * Next bracket
+//   * Next word
+// * Empty trailing spaces
+// * Indentation guides (vertical lines indication indentation)
 
 // --- MARK: IMPL WIDGET ---
 impl Widget for CodeWidget {
@@ -174,26 +197,71 @@ impl Widget for CodeWidget {
     }
 
     fn layout(&mut self, _ctx: &mut LayoutCtx, bc: &BoxConstraints) -> Size {
-        let text: String = self.buffer_view .lock() .unwrap() .buffer() .rope .slice(..) .into();
+        let text: String = self
+            .buffer_view
+            .lock()
+            .unwrap()
+            .buffer()
+            .rope
+            .slice(..)
+            .into();
         let size = bc.max();
         self.text_layout.set_max_advance(Some(size.width as f32));
         let start = Instant::now();
-        self.text_layout.rebuild_with_attributes(&text, |b|b);
-        let since_the_epoch = start
-        .elapsed();
-        println!("Time of text layouting: {:?}s", since_the_epoch.as_secs_f32());
+        let curly_brush = Some(CodeTextBrush {
+            text: Color::rgb8(0xf0, 0x00, 0x00).into(),
+            backgroud: None,
+            curly_underline: true,
+        });
+        self.text_layout.rebuild_with_attributes(&text, |mut b| {
+            b.push(StyleProperty::Underline(true), 0..100);
+            b.push(
+                StyleProperty::Brush(Color::rgb8(0xff, 0x00, 0xff).into()),
+                40..100,
+            );
+            b.push(
+                StyleProperty::UnderlineBrush(Some(
+                    Color::rgb8(0xf0, 0x50, 0x10).into(),
+                )),
+                0..100,
+            );
+            b.push(StyleProperty::FontWeight(TextWeight::BOLD), 100..200);
+            b.push(
+                StyleProperty::Brush(Color::rgb8(0x10, 0xf0, 0x10).into()),
+                100..200,
+            );
+            b.push(StyleProperty::Strikethrough(true), 200..300);
+            b.push(
+                StyleProperty::StrikethroughBrush(Some(
+                    Color::rgb8(0x50, 0x50, 0xf0).into(),
+                )),
+                200..300,
+            );
+            b.push(StyleProperty::StrikethroughSize(Some(3.0)), 200..250);
+            b.push(
+                StyleProperty::Brush(Color::rgb8(0xA0, 0xA0, 0xA0).into()),
+                300..350,
+            );
+            b.push(StyleProperty::Underline(true), 300..332);
+            b.push(StyleProperty::UnderlineBrush(curly_brush), 300..332);
+            b
+        });
+        let since_the_epoch = start.elapsed();
+        println!(
+            "Time of text layouting: {:?}s",
+            since_the_epoch.as_secs_f32()
+        );
         size
     }
 
     fn paint(&mut self, ctx: &mut PaintCtx, scene: &mut Scene) {
         debug!("CodeWidget::paint");
-        let position={
+        let position = {
             let buffer_view = self.buffer_view().lock().unwrap();
             buffer_view.position_bytes()
         };
         self.text_layout.draw(scene, position, ctx.size());
     }
-
 
     fn children_ids(&self) -> SmallVec<[WidgetId; 16]> {
         debug!("CodeWidget::children_ids");

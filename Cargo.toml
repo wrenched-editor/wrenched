@@ -13,13 +13,14 @@ masonry = { git = "https://github.com/linebender/xilem", rev = "1eaff8f0fd75cb42
 accesskit = "0.17"
 tracing = "0.1"
 parley = { git = "https://github.com/linebender/parley", rev = "c0d158b5d77c5726ed33fd3f2cbfcde95df374ef", features = ["accesskit"] }
-
 eyre = "0.6"
 smallvec = "1.13"
 color-backtrace = { version = "0.6", default-features = false }
 tracing-subscriber = "0.3"
 peniko = "0.2"
 kurbo = "0.11"
+rand = "0.8.5"
+fontique = "0.2.0"
 
 [[bin]]
 name = "wrenched"

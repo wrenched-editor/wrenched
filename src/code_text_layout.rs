@@ -1,11 +1,18 @@
-use kurbo::{Affine, Size, Vec2};
+use core::{f32, f64};
+
+use kurbo::{Affine, BezPath, Cap, Join, Line, Rect, Size, Stroke, Vec2};
 use parley::{
-    fontique::{Collection, CollectionOptions, Style}, layout::Cursor, style::{FontFamily, GenericFamily, StyleProperty}, FontContext, FontStack, Layout, LayoutContext, PositionedLayoutItem, RangedBuilder
+    fontique::{Collection, CollectionOptions, Style},
+    layout::Cursor,
+    style::{FontFamily, GenericFamily, StyleProperty},
+    Decoration, FontContext, FontStack, GlyphRun, Layout, LayoutContext,
+    LineMetrics, PositionedLayoutItem, RangedBuilder, RunMetrics,
 };
 use peniko::BlendMode;
 use vello::{
     kurbo::Point,
-    peniko::{self, Color, Fill, Gradient}, Scene,
+    peniko::{self, Color, Fill, Gradient},
+    Scene,
 };
 use xilem::TextWeight;
 
@@ -23,37 +30,40 @@ pub struct CodeTextLayout {
 
 /// A custom brush for `Parley`, enabling using Parley to pass-through
 /// which glyphs are selected/highlighted
-#[derive(Clone, Debug, PartialEq)]
-pub enum CodeTextBrush {
-    Normal(peniko::Brush),
-    Highlight {
-        text: peniko::Brush,
-        fill: peniko::Brush,
-    },
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct CodeTextBrush {
+    pub text: peniko::Brush,
+    pub backgroud: Option<peniko::Brush>,
+    pub curly_underline: bool,
 }
 
 impl From<peniko::Brush> for CodeTextBrush {
     fn from(value: peniko::Brush) -> Self {
-        Self::Normal(value)
+        Self {
+            text: value,
+            backgroud: None,
+            curly_underline: false,
+        }
     }
 }
 
 impl From<Gradient> for CodeTextBrush {
     fn from(value: Gradient) -> Self {
-        Self::Normal(value.into())
+        Self {
+            text: value.into(),
+            backgroud: None,
+            curly_underline: false,
+        }
     }
 }
 
 impl From<Color> for CodeTextBrush {
     fn from(value: Color) -> Self {
-        Self::Normal(value.into())
-    }
-}
-
-// Parley requires their Brush implementations to implement Default
-impl Default for CodeTextBrush {
-    fn default() -> Self {
-        Self::Normal(Default::default())
+        Self {
+            text: value.into(),
+            backgroud: None,
+            curly_underline: false,
+        }
     }
 }
 
@@ -69,10 +79,10 @@ impl CodeTextLayout {
             text_hinting: true,
             text_layout_ctx: LayoutContext::new(),
             font_ctx: FontContext {
-                    collection: Collection::new(CollectionOptions {
-                        system_fonts: true,
-                        ..Default::default()
-                    }),
+                collection: Collection::new(CollectionOptions {
+                    system_fonts: true,
+                    ..Default::default()
+                }),
                 source_cache: Default::default(),
             },
             scroll: 0.0,
@@ -122,59 +132,179 @@ impl CodeTextLayout {
         // TODO - check against self.last_text_start
         let theme = get_theme();
 
-        // Workaround for how parley treats empty lines.
-        //let text = if !text.is_empty() { text } else { " " };
-
-        let mut builder = self.text_layout_ctx.ranged_builder(&mut self.font_ctx, text, theme.scale);
+        let mut builder = self.text_layout_ctx.ranged_builder(
+            &mut self.font_ctx,
+            text,
+            theme.scale,
+        );
         builder.push_default(StyleProperty::Brush(theme.text_color.into()));
         builder.push_default(StyleProperty::FontSize(theme.text_size as f32));
         builder.push_default(StyleProperty::FontStack(self.font.clone()));
         builder.push_default(StyleProperty::FontWeight(TextWeight::NORMAL));
         builder.push_default(StyleProperty::FontStyle(Style::Normal));
 
-        // Currently, this is used for:
-        // - underlining IME suggestions
-        // - applying a brush to selected text.
         let mut builder = attributes(builder);
         builder.build_into(&mut self.layout, text);
-        self.layout
-            .break_all_lines(self.max_advance);
+        self.layout.break_all_lines(self.max_advance);
     }
 
     pub fn scroll(&mut self, delta: Vec2) {
         const SCROLLING_SPEED: f64 = 2.0;
         // TODO: Horizontal scroll
-        let delta = Vec2::new(delta.x * -SCROLLING_SPEED, delta.y * -SCROLLING_SPEED);
+        let delta =
+            Vec2::new(delta.x * -SCROLLING_SPEED, delta.y * -SCROLLING_SPEED);
         if self.scroll + delta.y < 0.0 {
             self.scroll = 0.0;
         }
         self.scroll += delta.y;
     }
 
+    fn draw_underline(
+        scene: &mut Scene,
+        underline: &Decoration<CodeTextBrush>,
+        glyph_run: &GlyphRun<'_, CodeTextBrush>,
+        run_metrics: &RunMetrics,
+    ) {
+        let offset = underline.offset.unwrap_or(run_metrics.underline_offset);
+        let stroke_size = underline.size.unwrap_or(run_metrics.underline_size);
+        let y1 = glyph_run.baseline() - offset - (stroke_size / 2.0);
+        let x1 = glyph_run.offset();
+        let x2 = x1 + glyph_run.advance();
+        let underline_shape = Line::new((x1, y1), (x2, y1));
+
+        let stroke = Stroke {
+            width: stroke_size as f64,
+            join: Join::Bevel,
+            miter_limit: 4.0,
+            start_cap: Cap::Butt,
+            end_cap: Cap::Butt,
+            dash_pattern: Default::default(),
+            dash_offset: 0.0,
+        };
+
+        scene.stroke(
+            &stroke,
+            Affine::IDENTITY,
+            &underline.brush.text,
+            Some(Affine::IDENTITY),
+            &underline_shape,
+        );
+    }
+
+    /// This function is doing overdraw on y axis it is up to the user to make
+    /// sure everything fits together.
+    fn curly_path(
+        left: f64,
+        right: f64,
+        top: f64,
+        botton: f64,
+        stroke_size: f64,
+    ) -> BezPath {
+        let height_middle = (top + botton) / 2.0;
+        // Little bit of black magic borrowed from:
+        // https://math.stackexchange.com/questions/4235124/getting-the-most-accurate-bezier-curve-that-plots-a-sine-wave
+        // The sine wave is oscillating around the x axis so the amplitude is
+        // 2, thus we need to divide the scale by 2.
+        let height = botton - top;
+        let width = right - left;
+        let sin_scale: f64 = (height - stroke_size) / 2.0;
+        let sin_len: f64 = 2.0 * f64::consts::PI * sin_scale;
+        let scaled_v: f64 = 3.4641 * sin_scale;
+        let scaled_u: f64 = 2.9361 * sin_scale;
+
+        let mut path = BezPath::new();
+        path.move_to((left, height_middle));
+        // Add individual sines
+        for i in 0..((width / sin_len).ceil() as u32) {
+            let i = i as f64;
+            let x = left + (sin_len * i);
+            let x_next = left + (sin_len * (i + 1.0));
+            let p2: Point = (x + scaled_u, height_middle + scaled_v).into();
+            let p3: Point = (x_next - scaled_u, height_middle - scaled_v).into();
+            let p4: Point = (x_next, height_middle).into();
+            path.curve_to(p2, p3, p4);
+        }
+        path
+    }
+
+    fn draw_curly_underline(
+        scene: &mut Scene,
+        underline: &Decoration<CodeTextBrush>,
+        glyph_run: &GlyphRun<'_, CodeTextBrush>,
+        run_metrics: &RunMetrics,
+        line_metrics: &LineMetrics,
+    ) {
+        let offset = underline.offset.unwrap_or(run_metrics.underline_offset) as f64;
+        let stroke_size =
+            underline.size.unwrap_or(run_metrics.underline_size) as f64;
+        let y_top = glyph_run.baseline() as f64 - offset;
+        let y_bottom = glyph_run.baseline() as f64 + line_metrics.descent as f64;
+        let left = glyph_run.offset() as f64;
+        let right = (glyph_run.offset() + glyph_run.advance()) as f64;
+
+        let stroke = Stroke {
+            width: stroke_size,
+            join: Join::Bevel,
+            miter_limit: 4.0,
+            start_cap: Cap::Round,
+            end_cap: Cap::Round,
+            dash_pattern: Default::default(),
+            dash_offset: 0.0,
+        };
+
+        scene.push_layer(
+            BlendMode::default(),
+            1.,
+            Affine::IDENTITY,
+            &Rect::new(left, y_top, right, y_bottom),
+        );
+        let curly_path = Self::curly_path(left, right, y_top, y_bottom, 0.0);
+
+        scene.stroke(
+            &stroke,
+            Affine::IDENTITY,
+            &underline.brush.text,
+            Some(Affine::IDENTITY),
+            &curly_path,
+        );
+
+        scene.pop_layer();
+    }
+
     pub fn draw(&mut self, scene: &mut Scene, cursor_position: usize, size: Size) {
-        let cursor = Cursor::from_byte_index(&self.layout, cursor_position, parley::Affinity::Upstream);
+        let cursor = Cursor::from_byte_index(
+            &self.layout,
+            cursor_position,
+            parley::Affinity::Upstream,
+        );
         let transform = Affine::IDENTITY;
         let cursor_rect = cursor.geometry(&self.layout, 1.5);
         println!("self.scroll: {}", self.scroll);
         // TODO: Selection
         scene.fill(Fill::NonZero, transform, Color::WHITE, None, &cursor_rect);
-        scene.push_layer(BlendMode::default(), 1., Affine::IDENTITY, &size.to_rect());
+        scene.push_layer(
+            BlendMode::default(),
+            1.,
+            Affine::IDENTITY,
+            &size.to_rect(),
+        );
         for line in self.layout.lines() {
-            let metrics = line.metrics();
-            let up = metrics.baseline + metrics.ascent;
-            let down = metrics.baseline + metrics.descent;
+            let line_metrics = line.metrics();
+            let up = line_metrics.baseline + line_metrics.ascent;
+            let down = line_metrics.baseline + line_metrics.descent;
             if (down as f64) < self.scroll {
                 continue;
             }
-            if (up  as f64) > self.scroll + size.height{
+            if (up as f64) > self.scroll + size.height {
                 break;
             }
             for item in line.items() {
                 let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
                     continue;
                 };
-                let mut x = glyph_run.offset();
-                let y = glyph_run.baseline() - (self.scroll as f32);
+                let style = glyph_run.style();
+                let text_color = &style.brush.text;
+
                 let run = glyph_run.run();
                 let font = run.font();
                 let font_size = run.font_size();
@@ -185,11 +315,13 @@ impl CodeTextLayout {
                 let coords = run
                     .normalized_coords()
                     .iter()
-                    .map(|coord| vello::skrifa::instance::NormalizedCoord::from_bits(*coord))
+                    .map(|coord| {
+                        vello::skrifa::instance::NormalizedCoord::from_bits(*coord)
+                    })
                     .collect::<Vec<_>>();
                 scene
                     .draw_glyphs(font)
-                    .brush(Color::WHITE)
+                    .brush(text_color)
                     .hint(true)
                     .transform(transform)
                     .glyph_transform(glyph_xform)
@@ -197,22 +329,66 @@ impl CodeTextLayout {
                     .normalized_coords(&coords)
                     .draw(
                         Fill::NonZero,
-                        glyph_run.glyphs().map(|glyph| {
-                            let gx = x + glyph.x;
-                            let gy = y - glyph.y;
-                            x += glyph.advance;
-                            vello::Glyph {
-                                id: glyph.id as _,
-                                x: gx,
-                                y: gy,
-                            }
+                        glyph_run.positioned_glyphs().map(|glyph| vello::Glyph {
+                            id: glyph.id as _,
+                            x: glyph.x,
+                            y: glyph.y,
                         }),
                     );
+
+                let run_metrics = run.metrics();
+                if let Some(underline) = &style.underline {
+                    if underline.brush.curly_underline {
+                        Self::draw_curly_underline(
+                            scene,
+                            underline,
+                            &glyph_run,
+                            run_metrics,
+                            line_metrics,
+                        );
+                    } else {
+                        Self::draw_underline(
+                            scene,
+                            underline,
+                            &glyph_run,
+                            run_metrics,
+                        );
+                    }
+                }
+
+                if let Some(strikethrough) = &style.strikethrough {
+                    let offset = strikethrough
+                        .offset
+                        .unwrap_or(run_metrics.strikethrough_offset);
+                    let size =
+                        strikethrough.size.unwrap_or(run_metrics.strikethrough_size);
+                    // FIXME: This offset looks fishy... I think I should add it instead.
+                    let y1 = glyph_run.baseline() - offset - (size / 2.0);
+                    let x1 = glyph_run.offset();
+                    let x2 = x1 + glyph_run.advance();
+                    let strikethrough_shape = Line::new((x1, y1), (x2, y1));
+
+                    let stroke = Stroke {
+                        width: size as f64,
+                        join: Join::Bevel,
+                        miter_limit: 4.0,
+                        start_cap: Cap::Butt,
+                        end_cap: Cap::Butt,
+                        dash_pattern: Default::default(),
+                        dash_offset: 0.0,
+                    };
+
+                    scene.stroke(
+                        &stroke,
+                        Affine::IDENTITY,
+                        &strikethrough.brush.text,
+                        Some(Affine::IDENTITY),
+                        &strikethrough_shape,
+                    );
+                }
             }
         }
         scene.pop_layer();
-
-
     }
 }
 
