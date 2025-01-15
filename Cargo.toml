@@ -21,6 +21,7 @@ peniko = "0.2"
 kurbo = "0.11"
 rand = "0.8.5"
 fontique = "0.2.0"
+pulldown-cmark = "0.12.2"
 
 [[bin]]
 name = "wrenched"
