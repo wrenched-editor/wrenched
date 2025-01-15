@@ -108,6 +108,7 @@ fn parse_markdown(text: &str) -> LayoutFlow<MarkdownContent> {
     // TODO: Think about adding the image title to the renderer
     let mut ignore_text: bool = false;
 
+    // TODO: Make sure the firsts element margine is 0.0.
     for event in parser {
         match event {
             Event::Start(tag) => {
@@ -157,6 +158,7 @@ fn parse_markdown(text: &str) -> LayoutFlow<MarkdownContent> {
                             attrs: _,
                         } => text.push('\n'),
                         Tag::Paragraph => {
+                            // TODO: This should be a function???
                             if !text.is_empty() {
                                 for (&marker_kind, &start_pos) in
                                     running_markers.iter()
