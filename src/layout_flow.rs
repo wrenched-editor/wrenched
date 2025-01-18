@@ -1,13 +1,28 @@
 use std::{
-    cmp,
+    cmp::Ordering,
     ops::{Deref, DerefMut},
+    slice::Iter,
 };
+
+use kurbo::Rect;
 
 #[derive(Clone, Debug)]
 pub struct LayoutElement<Data> {
+    // TODO: Change to Rect which has all offset(x,y), height, and width.
     pub offset: f32,
     pub height: f32,
     pub data: Data,
+}
+
+impl<Data> LayoutElement<Data> {
+    pub fn get_source_rect(&self, parent_source_rect: &Rect) -> Rect {
+        let x0 = 0.0;
+        let y0 = (parent_source_rect.y0 - self.offset as f64).max(0.0);
+        let x1 = 0.0;
+        let y1 = (parent_source_rect.y1 - self.offset as f64 + self.height as f64)
+            .min(self.height as f64);
+        Rect::new(x0, y0, x1, y1)
+    }
 }
 
 // TODO: Rename this thing...
@@ -77,6 +92,7 @@ impl<Data: LayoutData> LayoutFlow<Data> {
     // TODO: Think about making it a `Result`
     pub fn get_visible_parts(
         &self,
+        // TODO: Change it to Rect
         offset: f32,
         height: f32,
     ) -> &[LayoutElement<Data>] {
@@ -84,11 +100,11 @@ impl<Data: LayoutData> LayoutFlow<Data> {
         if let Ok(index) = self.flow.binary_search_by(|v| {
             // TODO: This comparison should probably use epsilon
             if v.offset <= offset && v.offset + v.height >= offset {
-                cmp::Ordering::Equal
+                Ordering::Equal
             } else if v.offset < offset {
-                cmp::Ordering::Less
+                Ordering::Less
             } else {
-                cmp::Ordering::Greater
+                Ordering::Greater
             }
         }) {
             let last_index = self.flow[index..]
@@ -144,11 +160,11 @@ impl<Data: LayoutData> LayoutFlow<Data> {
             .binary_search_by(|v| {
                 // TODO: This comparison should probably use epsilon
                 if v.offset <= offset && v.offset + v.height >= offset {
-                    cmp::Ordering::Equal
+                    Ordering::Equal
                 } else if v.offset < offset {
-                    cmp::Ordering::Less
+                    Ordering::Less
                 } else {
-                    cmp::Ordering::Greater
+                    Ordering::Greater
                 }
             })
             .ok();
@@ -182,5 +198,13 @@ impl<Data: LayoutData> LayoutFlow<Data> {
             f(&mut e.data)
         }
         self.recopute_all();
+    }
+
+    pub fn iter(&self) -> Iter<'_, LayoutElement<Data>> {
+        self.flow.iter()
+    }
+
+    pub fn height(&self) -> f32 {
+        self.height
     }
 }

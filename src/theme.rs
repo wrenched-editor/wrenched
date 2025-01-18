@@ -13,6 +13,9 @@ pub struct Theme {
     pub font_stack: FontStack<'static>,
     pub monospace_font_stack: FontStack<'static>,
     pub monospace_text_color: Color,
+    pub markdown_bullet_list_indentation: f32,
+    pub markdown_numbered_list_indentation: f32,
+    pub markdown_list_after_indentation: f32,
 }
 
 impl Theme {
@@ -28,6 +31,10 @@ impl Theme {
                 GenericFamily::Monospace,
             )),
             monospace_text_color: Color::rgb8(0xFF, 0x8C, 0x00),
+            // TODO: These should scale with text size somehow
+            markdown_bullet_list_indentation: 10.0,
+            markdown_numbered_list_indentation: 5.0,
+            markdown_list_after_indentation: 5.0,
         }
     }
 }
