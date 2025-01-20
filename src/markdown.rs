@@ -7,7 +7,7 @@ use parley::{
     Alignment, Cluster, Decoration, FontContext, FontStyle, GlyphRun, Layout,
     LayoutContext, PositionedLayoutItem, RangedBuilder, RunMetrics, StyleProperty,
 };
-use peniko::{BlendMode, Color, Fill, Format, Image};
+use peniko::{BlendMode, Color, Fill, Image, ImageFormat};
 use pulldown_cmark::{
     BrokenLinkCallback, Event, HeadingLevel, Options, Parser, Tag, TagEnd,
 };
@@ -16,7 +16,7 @@ use tracing::{debug, error, info, warn};
 use vello::Scene;
 use xilem::{
     core::{Message, MessageResult, View, ViewMarker},
-    Pod, TextWeight, ViewCtx,
+    FontWeight, Pod, ViewCtx,
 };
 
 use crate::{
@@ -28,12 +28,21 @@ use crate::{
 pub enum ListMarker {
     Symbol {
         symbol: String,
-        layout: Box<Layout<Color>>,
+        layout: Box<Layout<MarkdownBrush>>,
     },
     Numbers {
         start_number: u32,
-        layouted: Vec<Layout<Color>>,
+        layouted: Vec<Layout<MarkdownBrush>>,
     },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct MarkdownBrush(Color);
+
+impl Default for MarkdownBrush {
+    fn default() -> Self {
+        MarkdownBrush(Color::from_rgb8(0x00, 0x00, 0x00))
+    }
 }
 
 #[derive(Clone)]
@@ -56,7 +65,7 @@ pub enum MarkdownContent {
         level: HeadingLevel,
         text: String,
         markers: Vec<TextMarker>,
-        text_layout: Layout<Color>,
+        text_layout: Layout<MarkdownBrush>,
     },
     List {
         list: List,
@@ -65,7 +74,7 @@ pub enum MarkdownContent {
         top_margin: f32,
         text: String,
         markers: Vec<TextMarker>,
-        text_layout: Layout<Color>,
+        text_layout: Layout<MarkdownBrush>,
     },
     Image {
         uri: String,
@@ -74,7 +83,7 @@ pub enum MarkdownContent {
     },
     CodeBlock {
         text: String,
-        text_layout: Layout<Color>,
+        text_layout: Layout<MarkdownBrush>,
     },
     HorizontalLine {
         height: f32,
@@ -85,7 +94,7 @@ impl MarkdownContent {
     fn layout(
         &mut self,
         font_ctx: &mut FontContext,
-        layout_ctx: &mut LayoutContext<Color>,
+        layout_ctx: &mut LayoutContext<MarkdownBrush>,
         width: f32,
         theme: &Theme,
     ) {
@@ -115,7 +124,7 @@ impl MarkdownContent {
                     let (width, height) = image_data.dimensions();
                     *image = Some(Image::new(
                         image_data.to_vec().into(),
-                        Format::Rgba8,
+                        ImageFormat::Rgba8,
                         width,
                         height,
                     ));
@@ -130,13 +139,13 @@ impl MarkdownContent {
                 decoration: _,
             } => {
                 flow.apply_to_all(|data| {
-                        data.layout(
-                            font_ctx,
-                            layout_ctx,
-                            width - theme.markdown_indentation_decoration_width,
-                            theme,
-                        );
-                    });
+                    data.layout(
+                        font_ctx,
+                        layout_ctx,
+                        width - theme.markdown_indentation_decoration_width,
+                        theme,
+                    );
+                });
 
                 // TODO: Draw indentation decoration
             }
@@ -223,7 +232,7 @@ impl MarkdownContent {
                 };
                 builder.push_default(StyleProperty::FontSize(font_size));
                 builder.push_default(StyleProperty::LineHeight(line_height));
-                builder.push_default(StyleProperty::FontWeight(TextWeight::BOLD));
+                builder.push_default(StyleProperty::FontWeight(FontWeight::BOLD));
                 let mut layout = builder.build(&text);
                 layout.break_all_lines(Some(width));
                 *text_layout = layout;
@@ -245,9 +254,7 @@ impl MarkdownContent {
                 text: _,
                 markers: _,
                 text_layout,
-            } => {
-                draw_text(scene, text_layout, translation, source_rect)
-            }
+            } => draw_text(scene, text_layout, translation, source_rect),
             MarkdownContent::Image {
                 uri: _,
                 title: _,
@@ -256,7 +263,7 @@ impl MarkdownContent {
                 if let Some(image) = image {
                     draw_image(scene, image, translation);
                 }
-            },
+            }
             MarkdownContent::CodeBlock {
                 text: _,
                 text_layout: _,
@@ -265,10 +272,11 @@ impl MarkdownContent {
                 flow,
                 decoration: _,
             } => {
-                    let mut translation_elem = translation;
-                    translation_elem.x += theme.markdown_indentation_decoration_width as f64;
-                    draw_flow(scene, flow, translation_elem, source_rect, theme, false);
-            },
+                let mut translation_elem = translation;
+                translation_elem.x +=
+                    theme.markdown_indentation_decoration_width as f64;
+                draw_flow(scene, flow, translation_elem, source_rect, theme, false);
+            }
             MarkdownContent::List { list } => {
                 // TODO: Maybe it should get some width to prevent some stupid behaviour in some
                 // corner cases
@@ -277,7 +285,14 @@ impl MarkdownContent {
                 for (index, flow) in list.list.iter().enumerate() {
                     let mut translation_elem = translation;
                     translation_elem.x += list.indentation as f64;
-                    draw_flow(scene, flow, translation_elem, source_rect, theme, false);
+                    draw_flow(
+                        scene,
+                        flow,
+                        translation_elem,
+                        source_rect,
+                        theme,
+                        false,
+                    );
                     match &list.marker {
                         ListMarker::Symbol { symbol: _, layout } => {
                             let mut marker_translation = translation;
@@ -336,9 +351,7 @@ impl LayoutData for MarkdownContent {
                 uri: _,
                 title: _,
                 image,
-            } => {
-                image.as_ref().map(|i| i.height as f32).unwrap_or(0.0)
-            }
+            } => image.as_ref().map(|i| i.height as f32).unwrap_or(0.0),
             MarkdownContent::CodeBlock {
                 text: _,
                 text_layout,
@@ -722,14 +735,14 @@ fn parse_markdown(text: &str) -> LayoutFlow<MarkdownContent> {
 }
 
 fn feed_marker_to_builder<'a>(
-    builder: &'a mut RangedBuilder<Color>,
+    builder: &'a mut RangedBuilder<MarkdownBrush>,
     text_marker: &TextMarker,
     theme: &'a Theme,
 ) {
     let rang = text_marker.start_pos..text_marker.end_pos;
     match text_marker.kind {
         MarkerKind::Bold => {
-            builder.push(StyleProperty::FontWeight(TextWeight::BOLD), rang)
+            builder.push(StyleProperty::FontWeight(FontWeight::BOLD), rang)
         }
         MarkerKind::Italic => {
             builder.push(StyleProperty::FontStyle(FontStyle::Italic), rang)
@@ -742,7 +755,10 @@ fn feed_marker_to_builder<'a>(
                 StyleProperty::FontStack(theme.monospace_font_stack.clone()),
                 rang.clone(),
             );
-            builder.push(StyleProperty::Brush(theme.monospace_text_color), rang);
+            builder.push(
+                StyleProperty::Brush(MarkdownBrush(theme.monospace_text_color)),
+                rang,
+            );
         }
     }
 }
@@ -751,16 +767,16 @@ fn text_to_builder<'a>(
     text: &'a str,
     markers: &[TextMarker],
     font_ctx: &'a mut FontContext,
-    layout_ctx: &'a mut LayoutContext<Color>,
-) -> RangedBuilder<'a, Color> {
+    layout_ctx: &'a mut LayoutContext<MarkdownBrush>,
+) -> RangedBuilder<'a, MarkdownBrush> {
     let theme = get_theme();
 
-    let mut builder: RangedBuilder<'_, Color> =
+    let mut builder: RangedBuilder<'_, MarkdownBrush> =
         layout_ctx.ranged_builder(font_ctx, text, theme.scale);
-    builder.push_default(StyleProperty::Brush(theme.text_color));
+    builder.push_default(StyleProperty::Brush(MarkdownBrush(theme.text_color)));
     builder.push_default(StyleProperty::FontSize(theme.text_size as f32));
     builder.push_default(StyleProperty::FontStack(theme.font_stack.clone()));
-    builder.push_default(StyleProperty::FontWeight(TextWeight::NORMAL));
+    builder.push_default(StyleProperty::FontWeight(FontWeight::NORMAL));
     builder.push_default(StyleProperty::FontStyle(FontStyle::Normal));
     builder.push_default(StyleProperty::LineHeight(1.0));
     for marker in markers.iter() {
@@ -771,7 +787,7 @@ fn text_to_builder<'a>(
 
 pub struct MarkdowWidget {
     markdown_layout: LayoutFlow<MarkdownContent>,
-    layout_ctx: LayoutContext<Color>,
+    layout_ctx: LayoutContext<MarkdownBrush>,
     max_advance: f64,
     dirty: bool,
     scroll: Vec2,
@@ -794,8 +810,8 @@ impl MarkdowWidget {
 }
 fn draw_underline(
     scene: &mut Scene,
-    underline: &Decoration<Color>,
-    glyph_run: &GlyphRun<'_, Color>,
+    underline: &Decoration<MarkdownBrush>,
+    glyph_run: &GlyphRun<'_, MarkdownBrush>,
     run_metrics: &RunMetrics,
     transform: &Affine,
 ) {
@@ -819,7 +835,7 @@ fn draw_underline(
     scene.stroke(
         &stroke,
         *transform,
-        underline.brush,
+        underline.brush.0,
         Some(Affine::IDENTITY),
         &underline_shape,
     );
@@ -827,8 +843,8 @@ fn draw_underline(
 
 fn draw_strikethrough(
     scene: &mut Scene,
-    strikethrough: &Decoration<Color>,
-    glyph_run: &GlyphRun<'_, Color>,
+    strikethrough: &Decoration<MarkdownBrush>,
+    glyph_run: &GlyphRun<'_, MarkdownBrush>,
     run_metrics: &RunMetrics,
     transform: &Affine,
 ) {
@@ -855,7 +871,7 @@ fn draw_strikethrough(
     scene.stroke(
         &stroke,
         *transform,
-        strikethrough.brush,
+        strikethrough.brush.0,
         Some(Affine::IDENTITY),
         &strikethrough_shape,
     );
@@ -863,7 +879,7 @@ fn draw_strikethrough(
 
 fn draw_text(
     scene: &mut Scene,
-    layout: &Layout<Color>,
+    layout: &Layout<MarkdownBrush>,
     translation: Vec2,
     source_rect: &Rect,
 ) {
@@ -895,16 +911,10 @@ fn draw_text(
             let glyph_xform = synthesis
                 .skew()
                 .map(|angle| Affine::skew(angle.to_radians().tan() as f64, 0.0));
-            let coords = run
-                .normalized_coords()
-                .iter()
-                .map(|coord| {
-                    vello::skrifa::instance::NormalizedCoord::from_bits(*coord)
-                })
-                .collect::<Vec<_>>();
+            let coords = run.normalized_coords();
             scene
                 .draw_glyphs(font)
-                .brush(text_color)
+                .brush(text_color.0)
                 .hint(true)
                 .transform(transform)
                 .glyph_transform(glyph_xform)
@@ -944,11 +954,7 @@ fn draw_text(
     }
 }
 
-fn draw_image(
-    scene: &mut Scene,
-    image: &Image,
-    translation: Vec2,
-) {
+fn draw_image(scene: &mut Scene, image: &Image, translation: Vec2) {
     let transform: Affine = Affine::translate(translation);
     scene.draw_image(image, transform);
 }
@@ -966,10 +972,10 @@ fn draw_flow(
         (source_rect.y1 - source_rect.y0) as f32,
     );
 
-    let offset = if apply_scroll { source_rect.y0} else {0.0};
+    let offset = if apply_scroll { source_rect.y0 } else { 0.0 };
     for visible_part in visible_parts {
-        let translation = source_translation
-            + Vec2::new(0.0, visible_part.offset as f64 - offset);
+        let translation =
+            source_translation + Vec2::new(0.0, visible_part.offset as f64 - offset);
         visible_part.get_source_rect(source_rect);
         let sub_source_rect = visible_part.get_source_rect(source_rect);
         visible_part
@@ -983,7 +989,8 @@ impl Widget for MarkdowWidget {
         println!("event: {event:?} >>> ctx: {}", ctx.size());
         if let PointerEvent::MouseWheel(delta, _) = event {
             const SCROLLING_SPEED: f64 = 3.0;
-            let delta = Vec2::new(delta.x * -SCROLLING_SPEED, delta.y * -SCROLLING_SPEED);
+            let delta =
+                Vec2::new(delta.x * -SCROLLING_SPEED, delta.y * -SCROLLING_SPEED);
             self.scroll += delta;
             let size = ctx.size();
             let baseline = ctx.baseline_offset();
@@ -992,11 +999,13 @@ impl Widget for MarkdowWidget {
             // TODO: Get corrent view port width so the horizontal scroll is
             // possible.
             self.scroll.x = self.scroll.x.min(0.0);
-            self.scroll.y = self.scroll.y.min(self.markdown_layout.height() as f64 - size.height + baseline);
+            self.scroll.y = self
+                .scroll
+                .y
+                .min(self.markdown_layout.height() as f64 - size.height + baseline);
             info!("scrolling new scroll: {} , self.markdown_layout.height() {}, ctx.size() {}", self.scroll, self.markdown_layout.height(), ctx.size());
             if let Some(bla) = self.markdown_layout.flow.last() {
-                info!("bla.offset: {}" ,bla.offset);
-
+                info!("bla.offset: {}", bla.offset);
             }
             ctx.request_paint_only();
             ctx.set_handled();
@@ -1006,7 +1015,7 @@ impl Widget for MarkdowWidget {
     fn register_children(&mut self, _ctx: &mut masonry::RegisterCtx) {}
 
     fn compose(&mut self, ctx: &mut masonry::ComposeCtx) {
-        info!("compose called: size: {}, baseline_offset: {}, window_layout_rect: {}, window_origin: {}, layout_rect: {}", ctx.size(), ctx.baseline_offset(), ctx.window_layout_rect(), ctx.window_origin(), ctx.layout_rect());
+        info!("compose called: size: {}, baseline_offset: {}, window_origin: {}, layout_rect: {}", ctx.size(), ctx.baseline_offset(), ctx.window_origin(), ctx.layout_rect());
     }
 
     fn layout(
@@ -1044,7 +1053,8 @@ impl Widget for MarkdowWidget {
             &ctx.size().to_rect(),
         );
         // TODO: Make scroll work
-        let source_rect = Rect::new(0.0, self.scroll.y, 0.0, self.scroll.y + ctx.size().height);
+        let source_rect =
+            Rect::new(0.0, self.scroll.y, 0.0, self.scroll.y + ctx.size().height);
         let theme = &get_theme();
         draw_flow(
             scene,

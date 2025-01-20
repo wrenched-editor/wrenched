@@ -2,11 +2,11 @@ use core::{f32, f64};
 
 use kurbo::{Affine, BezPath, Cap, Join, Line, Rect, Size, Stroke, Vec2};
 use parley::{
-    fontique::{Collection, CollectionOptions, Style},
+    fontique::{Collection, CollectionOptions},
     layout::Cursor,
     style::{FontFamily, GenericFamily, StyleProperty},
-    Cluster, Decoration, FontContext, FontStack, GlyphRun, Layout, LayoutContext,
-    LineMetrics, PositionedLayoutItem, RangedBuilder, RunMetrics,
+    Cluster, Decoration, FontContext, FontStack, FontStyle, GlyphRun, Layout,
+    LayoutContext, LineMetrics, PositionedLayoutItem, RangedBuilder, RunMetrics,
 };
 use peniko::BlendMode;
 use vello::{
@@ -14,7 +14,7 @@ use vello::{
     peniko::{self, Color, Fill, Gradient},
     Scene,
 };
-use xilem::TextWeight;
+use xilem::FontWeight;
 
 use crate::theme::get_theme;
 
@@ -140,8 +140,8 @@ impl CodeTextLayout {
         builder.push_default(StyleProperty::Brush(theme.text_color.into()));
         builder.push_default(StyleProperty::FontSize(theme.text_size as f32));
         builder.push_default(StyleProperty::FontStack(self.font.clone()));
-        builder.push_default(StyleProperty::FontWeight(TextWeight::NORMAL));
-        builder.push_default(StyleProperty::FontStyle(Style::Normal));
+        builder.push_default(StyleProperty::FontWeight(FontWeight::NORMAL));
+        builder.push_default(StyleProperty::FontStyle(FontStyle::Normal));
 
         let mut builder = attributes(builder);
         builder.build_into(&mut self.layout, text);
@@ -356,13 +356,7 @@ impl CodeTextLayout {
                 let glyph_xform = synthesis
                     .skew()
                     .map(|angle| Affine::skew(angle.to_radians().tan() as f64, 0.0));
-                let coords = run
-                    .normalized_coords()
-                    .iter()
-                    .map(|coord| {
-                        vello::skrifa::instance::NormalizedCoord::from_bits(*coord)
-                    })
-                    .collect::<Vec<_>>();
+                let coords = run.normalized_coords();
                 scene
                     .draw_glyphs(font)
                     .brush(text_color)

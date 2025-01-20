@@ -6,23 +6,23 @@ edition = "2021"
 [dependencies]
 ropey = "1.6"
 crop = { version = "0.4", features = ["graphemes"] }
-vello = "0.3"
+vello = { git = "https://github.com/linebender/vello", rev = "d5ebe12737861c521d7ce6ce02b800278367d07d" }
 winit = "0.30"
-xilem = { git = "https://github.com/linebender/xilem", rev = "1eaff8f0fd75cb42436b4265a2262023a94fffdd" }
-masonry = { git = "https://github.com/linebender/xilem", rev = "1eaff8f0fd75cb42436b4265a2262023a94fffdd" }
-accesskit = "0.17"
+xilem = { git = "https://github.com/linebender/xilem", rev = "e179a1a33a96fdf22581ac2b49bd9175c2409178" }
+masonry = { git = "https://github.com/linebender/xilem", rev = "e179a1a33a96fdf22581ac2b49bd9175c2409178" }
+accesskit = "^0.17.0"
 tracing = "0.1"
-parley = { git = "https://github.com/linebender/parley", rev = "c0d158b5d77c5726ed33fd3f2cbfcde95df374ef", features = ["accesskit"] }
+parley = { git = "https://github.com/linebender/parley", rev = "16b62518d467487ee15cb230fdb28530d89a8cf6", features = ["accesskit"] }
 eyre = "0.6"
 smallvec = "1.13"
 color-backtrace = { version = "0.6", default-features = false }
 tracing-subscriber = "0.3"
-peniko = "0.2"
+peniko = "0.3"
 kurbo = "0.11"
 rand = "0.8.5"
-fontique = "0.2.0"
+fontique = "0.2"
 pulldown-cmark = "0.12.2"
-image = "0.25.5"
+image = "0.25"
 
 [[bin]]
 name = "wrenched"

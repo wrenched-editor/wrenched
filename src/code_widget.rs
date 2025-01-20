@@ -16,7 +16,7 @@ use tracing::debug;
 use vello::peniko::Color;
 use xilem::{
     core::{Message, MessageResult, View, ViewMarker},
-    Pod, TextWeight, ViewCtx,
+    FontWeight, Pod, ViewCtx,
 };
 
 use crate::{
@@ -176,8 +176,8 @@ impl Widget for CodeWidget {
             TextEvent::ModifierChange(modifiers_state) => {
                 debug!("TextEvent::ModifierChange: {:?}", modifiers_state)
             }
-            TextEvent::FocusChange(focus) => {
-                debug!("TextEvent::FocusChange: {}", focus)
+            TextEvent::WindowFocusChange(focus) => {
+                debug!("TextEvent::WindowFocusChange: {}", focus)
             }
         }
     }
@@ -209,37 +209,37 @@ impl Widget for CodeWidget {
         self.text_layout.set_max_advance(Some(size.width as f32));
         let start = Instant::now();
         let curly_brush = Some(CodeTextBrush {
-            text: Color::rgb8(0xf0, 0x00, 0x00).into(),
+            text: Color::from_rgb8(0xf0, 0x00, 0x00).into(),
             backgroud: None,
             curly_underline: true,
         });
         self.text_layout.rebuild_with_attributes(&text, |mut b| {
             b.push(StyleProperty::Underline(true), 0..100);
             b.push(
-                StyleProperty::Brush(Color::rgb8(0xff, 0x00, 0xff).into()),
+                StyleProperty::Brush(Color::from_rgb8(0xff, 0x00, 0xff).into()),
                 40..100,
             );
             b.push(
                 StyleProperty::UnderlineBrush(Some(
-                    Color::rgb8(0xf0, 0x50, 0x10).into(),
+                    Color::from_rgb8(0xf0, 0x50, 0x10).into(),
                 )),
                 0..100,
             );
-            b.push(StyleProperty::FontWeight(TextWeight::BOLD), 100..200);
+            b.push(StyleProperty::FontWeight(FontWeight::BOLD), 100..200);
             b.push(
-                StyleProperty::Brush(Color::rgb8(0x10, 0xf0, 0x10).into()),
+                StyleProperty::Brush(Color::from_rgb8(0x10, 0xf0, 0x10).into()),
                 100..200,
             );
             b.push(StyleProperty::Strikethrough(true), 200..300);
             b.push(
                 StyleProperty::StrikethroughBrush(Some(
-                    Color::rgb8(0x50, 0x50, 0xf0).into(),
+                    Color::from_rgb8(0x50, 0x50, 0xf0).into(),
                 )),
                 200..300,
             );
             b.push(StyleProperty::StrikethroughSize(Some(3.0)), 200..250);
             b.push(
-                StyleProperty::Brush(Color::rgb8(0xA0, 0xA0, 0xA0).into()),
+                StyleProperty::Brush(Color::from_rgb8(0xA0, 0xA0, 0xA0).into()),
                 300..350,
             );
             b.push(StyleProperty::Underline(true), 300..332);

@@ -22,7 +22,7 @@ pub struct Theme {
 impl Theme {
     fn new() -> Theme {
         Theme {
-            text_color: Color::rgb8(0xf0, 0xf0, 0xea),
+            text_color: Color::from_rgba8(0xf0, 0xf0, 0xea, 0xff),
             text_size: 16,
             scale: 1.0,
             font_stack: FontStack::Single(FontFamily::Generic(
@@ -31,7 +31,7 @@ impl Theme {
             monospace_font_stack: FontStack::Single(FontFamily::Generic(
                 GenericFamily::Monospace,
             )),
-            monospace_text_color: Color::rgb8(0xFF, 0x8C, 0x00),
+            monospace_text_color: Color::from_rgba8(0xFF, 0x8C, 0x00, 0xff),
             // TODO: These should scale with text size somehow
             markdown_bullet_list_indentation: 10.0,
             markdown_numbered_list_indentation: 5.0,
