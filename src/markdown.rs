@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use accesskit::Role;
 use kurbo::{Affine, Cap, Join, Line, Rect, Stroke, Vec2};
-use masonry::Widget;
+use masonry::{EventCtx, PointerEvent, Widget};
 use parley::{
     Alignment, Cluster, Decoration, FontContext, FontStyle, GlyphRun, Layout,
     LayoutContext, PositionedLayoutItem, RangedBuilder, RunMetrics, StyleProperty,
@@ -12,7 +12,7 @@ use pulldown_cmark::{
     BrokenLinkCallback, Event, HeadingLevel, Options, Parser, Tag, TagEnd,
 };
 use smallvec::SmallVec;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 use vello::Scene;
 use xilem::{
     core::{Message, MessageResult, View, ViewMarker},
@@ -28,7 +28,7 @@ use crate::{
 pub enum ListMarker {
     Symbol {
         symbol: String,
-        layout: Layout<Color>,
+        layout: Box<Layout<Color>>,
     },
     Numbers {
         start_number: u32,
@@ -126,9 +126,20 @@ impl MarkdownContent {
                 text_layout: _,
             } => {}
             MarkdownContent::Indented {
-                flow: _,
+                flow,
                 decoration: _,
-            } => {}
+            } => {
+                flow.apply_to_all(|data| {
+                        data.layout(
+                            font_ctx,
+                            layout_ctx,
+                            width - theme.markdown_indentation_decoration_width,
+                            theme,
+                        );
+                    });
+
+                // TODO: Draw indentation decoration
+            }
             MarkdownContent::List { list } => {
                 let indentation: f32 = match &mut list.marker {
                     ListMarker::Symbol { symbol, layout } => {
@@ -138,7 +149,7 @@ impl MarkdownContent {
                         // TODO: Maybe it should get some width to prevent some stupid behaviour in some
                         // corner cases
                         marker_layout.break_all_lines(None);
-                        *layout = marker_layout;
+                        *layout = Box::new(marker_layout);
                         layout.full_width()
                             + theme.markdown_bullet_list_indentation
                             + theme.markdown_list_after_indentation
@@ -251,9 +262,13 @@ impl MarkdownContent {
                 text_layout: _,
             } => todo!(),
             MarkdownContent::Indented {
-                flow: _,
+                flow,
                 decoration: _,
-            } => todo!(),
+            } => {
+                    let mut translation_elem = translation;
+                    translation_elem.x += theme.markdown_indentation_decoration_width as f64;
+                    draw_flow(scene, flow, translation_elem, source_rect, theme, false);
+            },
             MarkdownContent::List { list } => {
                 // TODO: Maybe it should get some width to prevent some stupid behaviour in some
                 // corner cases
@@ -262,7 +277,7 @@ impl MarkdownContent {
                 for (index, flow) in list.list.iter().enumerate() {
                     let mut translation_elem = translation;
                     translation_elem.x += list.indentation as f64;
-                    draw_flow(scene, flow, translation_elem, source_rect, theme);
+                    draw_flow(scene, flow, translation_elem, source_rect, theme, false);
                     match &list.marker {
                         ListMarker::Symbol { symbol: _, layout } => {
                             let mut marker_translation = translation;
@@ -318,11 +333,10 @@ impl LayoutData for MarkdownContent {
                 text_layout,
             } => text_layout.height() + top_margin,
             MarkdownContent::Image {
-                uri,
+                uri: _,
                 title: _,
                 image,
             } => {
-                // TODO: This is somewhat stupid...
                 image.as_ref().map(|i| i.height as f32).unwrap_or(0.0)
             }
             MarkdownContent::CodeBlock {
@@ -478,6 +492,7 @@ fn process_list_events<'a, T: BrokenLinkCallback<'a>>(
     let mut list_elements = Vec::new();
 
     while let Some(event) = events.next() {
+        println!("Event: {event:?}");
         if let Event::Start(Tag::Item) = event {
             list_elements
                 .push(process_events(events, Some(Event::End(TagEnd::Item))));
@@ -501,6 +516,7 @@ fn process_events<'a, T: BrokenLinkCallback<'a>>(
 
     // TODO: Make sure the firsts element margin is 0.0.
     while let Some(event) = events.next() {
+        println!("Event: {event:?}");
         if let Some(event_) = &untill {
             if &event == event_ {
                 break;
@@ -562,7 +578,7 @@ fn process_events<'a, T: BrokenLinkCallback<'a>>(
                     } else {
                         ListMarker::Symbol {
                             symbol: "•".to_string(),
-                            layout: Layout::new(),
+                            layout: Box::new(Layout::new()),
                         }
                     };
                     res.push(MarkdownContent::List {
@@ -573,7 +589,7 @@ fn process_events<'a, T: BrokenLinkCallback<'a>>(
                         },
                     });
                 }
-                Tag::FootnoteDefinition(cow_str) => todo!(),
+                Tag::FootnoteDefinition(_cow_str) => todo!(),
                 Tag::DefinitionList => {
                     warn!("DefinitionList in markdown is not supported!")
                 }
@@ -601,7 +617,7 @@ fn process_events<'a, T: BrokenLinkCallback<'a>>(
                 match end_tag {
                     TagEnd::Paragraph => {
                         // TODO: Work on the top_margin
-                        if text.is_empty() {
+                        if !text.trim().is_empty() {
                             res.push(MarkdownContent::Paragraph {
                                 top_margin: 10.0,
                                 text: text.clone(),
@@ -614,8 +630,6 @@ fn process_events<'a, T: BrokenLinkCallback<'a>>(
                     }
                     TagEnd::CodeBlock => todo!(),
                     TagEnd::HtmlBlock => todo!(),
-                    TagEnd::List(_) => todo!(),
-                    TagEnd::Item => todo!(),
                     TagEnd::FootnoteDefinition => todo!(),
                     TagEnd::Table => todo!(),
                     TagEnd::TableHead => todo!(),
@@ -757,11 +771,10 @@ fn text_to_builder<'a>(
 
 pub struct MarkdowWidget {
     markdown_layout: LayoutFlow<MarkdownContent>,
-    content: String,
-    file: PathBuf,
     layout_ctx: LayoutContext<Color>,
     max_advance: f64,
     dirty: bool,
+    scroll: Vec2,
 }
 
 impl MarkdowWidget {
@@ -772,11 +785,10 @@ impl MarkdowWidget {
         let markdown_layout = parse_markdown(&content);
         Self {
             markdown_layout,
-            file: markdown_file.as_ref().to_path_buf(),
-            content,
             dirty: true,
             layout_ctx: LayoutContext::new(),
             max_advance: 0.0,
+            scroll: Vec2::new(0.0, 0.0),
         }
     }
 }
@@ -947,15 +959,17 @@ fn draw_flow(
     source_translation: Vec2,
     source_rect: &Rect,
     theme: &Theme,
+    apply_scroll: bool,
 ) {
     let visible_parts = flow.get_visible_parts(
         source_rect.y0 as f32,
         (source_rect.y1 - source_rect.y0) as f32,
     );
 
+    let offset = if apply_scroll { source_rect.y0} else {0.0};
     for visible_part in visible_parts {
         let translation = source_translation
-            + Vec2::new(0.0, visible_part.offset as f64 - source_rect.y0);
+            + Vec2::new(0.0, visible_part.offset as f64 - offset);
         visible_part.get_source_rect(source_rect);
         let sub_source_rect = visible_part.get_source_rect(source_rect);
         visible_part
@@ -965,13 +979,42 @@ fn draw_flow(
 }
 
 impl Widget for MarkdowWidget {
+    fn on_pointer_event(&mut self, ctx: &mut EventCtx, event: &PointerEvent) {
+        println!("event: {event:?} >>> ctx: {}", ctx.size());
+        if let PointerEvent::MouseWheel(delta, _) = event {
+            const SCROLLING_SPEED: f64 = 3.0;
+            let delta = Vec2::new(delta.x * -SCROLLING_SPEED, delta.y * -SCROLLING_SPEED);
+            self.scroll += delta;
+            let size = ctx.size();
+            let baseline = ctx.baseline_offset();
+            self.scroll.x = self.scroll.x.max(0.0);
+            self.scroll.y = self.scroll.y.max(0.0);
+            // TODO: Get corrent view port width so the horizontal scroll is
+            // possible.
+            self.scroll.x = self.scroll.x.min(0.0);
+            self.scroll.y = self.scroll.y.min(self.markdown_layout.height() as f64 - size.height + baseline);
+            info!("scrolling new scroll: {} , self.markdown_layout.height() {}, ctx.size() {}", self.scroll, self.markdown_layout.height(), ctx.size());
+            if let Some(bla) = self.markdown_layout.flow.last() {
+                info!("bla.offset: {}" ,bla.offset);
+
+            }
+            ctx.request_paint_only();
+            ctx.set_handled();
+        }
+    }
+
     fn register_children(&mut self, _ctx: &mut masonry::RegisterCtx) {}
+
+    fn compose(&mut self, ctx: &mut masonry::ComposeCtx) {
+        info!("compose called: size: {}, baseline_offset: {}, window_layout_rect: {}, window_origin: {}, layout_rect: {}", ctx.size(), ctx.baseline_offset(), ctx.window_layout_rect(), ctx.window_origin(), ctx.layout_rect());
+    }
 
     fn layout(
         &mut self,
         ctx: &mut masonry::LayoutCtx,
         bc: &masonry::BoxConstraints,
     ) -> kurbo::Size {
+        debug!("cool layout");
         let size = bc.max();
         let theme = &get_theme();
         // TODO: Think about putting the context into the theme??? Or somewhere else???
@@ -989,6 +1032,7 @@ impl Widget for MarkdowWidget {
 
         self.max_advance = size.width;
         self.dirty = false;
+        info!("size: {}", size);
         size
     }
 
@@ -1000,8 +1044,7 @@ impl Widget for MarkdowWidget {
             &ctx.size().to_rect(),
         );
         // TODO: Make scroll work
-        let scroll = 0.0;
-        let source_rect = Rect::new(0.0, scroll, 0.0, scroll + ctx.size().height);
+        let source_rect = Rect::new(0.0, self.scroll.y, 0.0, self.scroll.y + ctx.size().height);
         let theme = &get_theme();
         draw_flow(
             scene,
@@ -1009,6 +1052,7 @@ impl Widget for MarkdowWidget {
             Vec2::new(0.0, 0.0),
             &source_rect,
             theme,
+            true,
         );
         scene.pop_layer();
     }

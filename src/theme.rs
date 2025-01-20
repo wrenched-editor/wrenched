@@ -16,6 +16,7 @@ pub struct Theme {
     pub markdown_bullet_list_indentation: f32,
     pub markdown_numbered_list_indentation: f32,
     pub markdown_list_after_indentation: f32,
+    pub markdown_indentation_decoration_width: f32,
 }
 
 impl Theme {
@@ -35,6 +36,7 @@ impl Theme {
             markdown_bullet_list_indentation: 10.0,
             markdown_numbered_list_indentation: 5.0,
             markdown_list_after_indentation: 5.0,
+            markdown_indentation_decoration_width: 10.0,
         }
     }
 }
