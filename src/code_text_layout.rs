@@ -364,7 +364,7 @@ impl CodeTextLayout {
                     .transform(transform)
                     .glyph_transform(glyph_xform)
                     .font_size(font_size)
-                    .normalized_coords(&coords)
+                    .normalized_coords(coords)
                     .draw(
                         Fill::NonZero,
                         glyph_run.positioned_glyphs().map(|glyph| vello::Glyph {

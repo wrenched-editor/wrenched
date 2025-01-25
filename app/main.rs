@@ -99,7 +99,7 @@ fn app_logic(task_list: &mut TaskList) -> impl WidgetView<TaskList> {
             flex((checkbox, delete_button)).direction(Axis::Horizontal)
         })
         .collect::<Vec<_>>();
-    // let code_view = code_view(&task_list.buffer_view, |_s: &mut TaskList| {});
+    //let code_view = code_view(&task_list.buffer_view, |_s: &mut TaskList| {});
     let markdown = markdown_view("test.md".into());
 
     //flex((first_line, tasks, code_view))

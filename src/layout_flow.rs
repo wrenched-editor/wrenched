@@ -192,16 +192,20 @@ impl<Data: LayoutData> LayoutFlow<Data> {
 
     pub fn apply_to_all<F>(&mut self, mut f: F)
     where
-        F: FnMut(&mut Data),
+        F: FnMut((usize, &mut Data)),
     {
-        for e in self.flow.iter_mut() {
-            f(&mut e.data)
+        for (i, e) in self.flow.iter_mut().enumerate() {
+            f((i, &mut e.data))
         }
         self.recopute_all();
     }
 
     pub fn iter(&self) -> Iter<'_, LayoutElement<Data>> {
         self.flow.iter()
+    }
+
+    pub fn len(&self) -> usize {
+        self.flow.len()
     }
 
     pub fn height(&self) -> f32 {

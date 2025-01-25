@@ -1,11 +1,15 @@
-use std::path::{Path, PathBuf};
+use std::{
+    ops::Range,
+    path::{Path, PathBuf},
+};
 
 use accesskit::Role;
-use kurbo::{Affine, Cap, Join, Line, Rect, Stroke, Vec2};
+use kurbo::{Affine, Cap, Join, Line, Rect, Size, Stroke, Vec2};
 use masonry::{EventCtx, PointerEvent, Widget};
 use parley::{
-    Alignment, Cluster, Decoration, FontContext, FontStyle, GlyphRun, Layout,
-    LayoutContext, PositionedLayoutItem, RangedBuilder, RunMetrics, StyleProperty,
+    Alignment, Cluster, Decoration, FontContext, FontStyle, GlyphRun, InlineBox,
+    Layout, LayoutContext, PositionedLayoutItem, RangedBuilder, RunMetrics,
+    StyleProperty,
 };
 use peniko::{BlendMode, Color, Fill, Image, ImageFormat};
 use pulldown_cmark::{
@@ -46,14 +50,251 @@ impl Default for MarkdownBrush {
 }
 
 #[derive(Clone)]
-pub struct List {
+pub struct MarkdownList {
     list: Vec<LayoutFlow<MarkdownContent>>,
     marker: ListMarker,
+    // Indentation is filled in during layout-ing. I don't like it but I'm not
+    // going to introduce a new data type for layout markdown.
     indentation: f32,
 }
 
+impl MarkdownList {
+    fn layout(
+        &mut self,
+        font_ctx: &mut FontContext,
+        layout_ctx: &mut LayoutContext<MarkdownBrush>,
+        width: f32,
+        theme: &Theme,
+    ) {
+        let indentation: f32 = match &mut self.marker {
+            ListMarker::Symbol { symbol, layout } => {
+                let mut builder = str_to_builder(symbol, &[], font_ctx, layout_ctx);
+                let mut marker_layout = builder.build(&symbol);
+                // TODO: Maybe it should get some width to prevent some stupid behaviour in some
+                // corner cases
+                marker_layout.break_all_lines(None);
+                *layout = Box::new(marker_layout);
+                layout.full_width()
+                    + theme.markdown_bullet_list_indentation
+                    + theme.markdown_list_after_indentation
+            }
+            ListMarker::Numbers {
+                start_number,
+                layouted,
+            } => {
+                let mut max_width: f32 = 0.0;
+                layouted.clear();
+                for k in 0..self.list.len() {
+                    // Not ideal way to layout the numbered list, but works for now.
+                    let mut str = (k as u32 + *start_number).to_string();
+                    str.push('.');
+                    let mut builder =
+                        str_to_builder(&str, &[], font_ctx, layout_ctx);
+                    let mut marker_layout = builder.build(&str);
+                    // TODO: Maybe it should get some width to prevent some stupid behaviour in some
+                    // corner cases
+                    marker_layout.break_all_lines(None);
+                    marker_layout.align(None, Alignment::End);
+                    let width = marker_layout.full_width()
+                        + theme.markdown_numbered_list_indentation
+                        + theme.markdown_list_after_indentation;
+                    if width > max_width {
+                        max_width = width;
+                    }
+                    layouted.push(marker_layout);
+                }
+                max_width
+            }
+        };
+        self.indentation = indentation;
+
+        for element in self.list.iter_mut() {
+            element.apply_to_all(|(i, data)| {
+                data.layout(font_ctx, layout_ctx, width - indentation, theme, i == 0);
+            });
+        }
+    }
+}
+
 #[derive(Clone)]
-pub struct IndentationDecoration {}
+pub enum IndentationDecoration {
+    Indentation,
+    Note,
+    Info,
+    Important,
+    Tip,
+    Caution,
+}
+
+#[derive(Clone)]
+pub struct Link {
+    url: String,
+    index_range: Range<usize>,
+}
+
+#[derive(Clone)]
+pub struct InlinedImage {
+    url: String,
+    data: Option<Image>,
+    text_index: usize,
+    // TODO: Maybe this should be in data to make it more correct
+    size: Size,
+}
+
+impl InlinedImage {
+    fn new(url: String, text_index: usize) -> Self {
+        Self {
+        url,
+        text_index,
+        data: None,
+        size: Size::ZERO,
+        }
+    }
+}
+
+// TODO: make all f32 to f64???
+
+#[derive(Clone)]
+pub struct MarkdownText {
+    str: String,
+    markers: Vec<TextMarker>,
+    text_layout: Layout<MarkdownBrush>,
+    // TODO: Change to small vec
+    inlined_images: Vec<InlinedImage>,
+    links: Vec<Link>,
+    height: f32,
+    margine: f32,
+}
+
+impl MarkdownText {
+    fn new(str: String, markers: Vec<TextMarker>, inlined_images: Vec<InlinedImage>, links: Vec<Link>) -> Self {
+        Self{
+            str,
+            markers,
+            text_layout: Layout::new(),
+            inlined_images,
+            links,
+            height: 0.0,
+            margine: 0.0,
+        }
+    }
+
+    fn load_images<'a>(&mut self) {
+        for inlined_image in self.inlined_images.iter_mut() {
+            if inlined_image.data.is_none() {
+                // TODO: Do something about unwraps
+                // Maybe show broken link image or something
+                let image_data = image::open(&inlined_image.url).unwrap().to_rgba8();
+                let (width, height) = image_data.dimensions();
+                inlined_image.data = Some(Image::new(
+                    image_data.to_vec().into(),
+                    ImageFormat::Rgba8,
+                    width,
+                    height,
+                ));
+            }
+        }
+    }
+
+    fn pre_fill_builder<'a>(
+        &'a self,
+        font_ctx: &'a mut FontContext,
+        layout_ctx: &'a mut LayoutContext<MarkdownBrush>,
+    ) -> RangedBuilder<'a, MarkdownBrush> {
+        // TODO: This is a bit fishy place to load images
+        let mut builder =
+            str_to_builder(&self.str, &self.markers, font_ctx, layout_ctx);
+        for (image_index, inlined_image) in self.inlined_images.iter().enumerate() {
+            if let Some(data) = &inlined_image.data {
+                builder.push_inline_box(InlineBox {
+                    id: image_index as u64,
+                    index: inlined_image.text_index,
+                    width: data.width as f32,
+                    height: data.height as f32,
+                });
+            }
+        }
+        builder
+    }
+
+    fn load_and_layout_as_header<'a>(
+        &mut self,
+        font_ctx: &'a mut FontContext,
+        layout_ctx: &'a mut LayoutContext<MarkdownBrush>,
+        width: f32,
+        theme: &Theme,
+        level: HeadingLevel,
+    ) {
+        self.load_images();
+        let mut builder = self.pre_fill_builder(font_ctx, layout_ctx);
+        let font_size = match level {
+            HeadingLevel::H1 => theme.text_size as f32 * 2.125,
+            HeadingLevel::H2 => theme.text_size as f32 * 1.875,
+            HeadingLevel::H3 => theme.text_size as f32 * 1.5,
+            HeadingLevel::H4 => theme.text_size as f32 * 1.25,
+            HeadingLevel::H5 => theme.text_size as f32 * 1.125,
+            HeadingLevel::H6 => theme.text_size as f32,
+        };
+        let line_height = match level {
+            // TODO: Experiment with line height to get better results???
+            HeadingLevel::H1 => 2.0,
+            HeadingLevel::H2 => 2.0,
+            HeadingLevel::H3 => 2.0,
+            HeadingLevel::H4 => 2.0,
+            HeadingLevel::H5 => 2.0,
+            HeadingLevel::H6 => 2.0,
+        };
+        builder.push_default(StyleProperty::FontSize(font_size));
+        builder.push_default(StyleProperty::LineHeight(line_height));
+        builder.push_default(StyleProperty::FontWeight(FontWeight::BOLD));
+        let mut layout = builder.build(&self.str);
+        // TODO: Change it to header other margine based on the header leave.
+        layout.break_all_lines(Some(width));
+        self.margine = theme.markdown_paragraph_top_margine;
+        self.height = layout.height();
+        self.text_layout = layout;
+
+    }
+
+    // Loads inlined images and layouts the text with prepared box reserved for
+    // them.
+    fn load_and_layout_text<'a>(
+        &mut self,
+        font_ctx: &'a mut FontContext,
+        layout_ctx: &'a mut LayoutContext<MarkdownBrush>,
+        width: f32,
+        theme: &Theme,
+        is_first: bool,
+    ) {
+        self.load_images();
+        let mut builder = self.pre_fill_builder(font_ctx, layout_ctx);
+        let mut layout = builder.build(&self.str);
+        layout.break_all_lines(Some(width));
+        self.text_layout = layout;
+
+        self.margine = if is_first {
+            0.0
+        } else {
+            theme.markdown_paragraph_top_margine
+            };
+        self.height = self.text_layout.height() + self.margine;
+    }
+
+    fn draw_text(&self, scene: &mut Scene, mut translation: Vec2, source_rect: &Rect) {
+        translation.y += self.margine as f64;
+        draw_text(
+            &self.text_layout,
+            scene,
+            translation,
+            source_rect,
+            &self.inlined_images,
+        );
+    }
+
+    fn height(&self) -> f32{
+        self.height
+    }
+}
 
 #[derive(Clone)]
 pub enum MarkdownContent {
@@ -63,23 +304,13 @@ pub enum MarkdownContent {
     },
     Header {
         level: HeadingLevel,
-        text: String,
-        markers: Vec<TextMarker>,
-        text_layout: Layout<MarkdownBrush>,
+        text: MarkdownText,
     },
     List {
-        list: List,
+        list: MarkdownList,
     },
     Paragraph {
-        top_margin: f32,
-        text: String,
-        markers: Vec<TextMarker>,
-        text_layout: Layout<MarkdownBrush>,
-    },
-    Image {
-        uri: String,
-        title: String,
-        image: Option<Image>,
+        text: MarkdownText,
     },
     CodeBlock {
         text: String,
@@ -87,6 +318,7 @@ pub enum MarkdownContent {
     },
     HorizontalLine {
         height: f32,
+        width: f32,
     },
 }
 
@@ -97,145 +329,43 @@ impl MarkdownContent {
         layout_ctx: &mut LayoutContext<MarkdownBrush>,
         width: f32,
         theme: &Theme,
+        is_first: bool,
     ) {
         match self {
-            MarkdownContent::Paragraph {
-                text,
-                markers,
-                top_margin: _,
-                text_layout,
-            } => {
-                let mut builder =
-                    text_to_builder(text, markers, font_ctx, layout_ctx);
-                let mut layout = builder.build(&text);
-                layout.break_all_lines(Some(width));
-                *text_layout = layout;
-            }
-            MarkdownContent::Image {
-                uri,
-                title: _,
-                image,
-            } => {
-                // TODO: This is a bit fishy place to load images
-                if image.is_none() {
-                    // TODO: Do something about unwraps
-                    // Maybe show broken link image or something
-                    let image_data = image::open(uri).unwrap().to_rgba8();
-                    let (width, height) = image_data.dimensions();
-                    *image = Some(Image::new(
-                        image_data.to_vec().into(),
-                        ImageFormat::Rgba8,
-                        width,
-                        height,
-                    ));
-                }
+            MarkdownContent::Paragraph { text } => {
+                text.load_and_layout_text(font_ctx, layout_ctx, width, theme, is_first);
             }
             MarkdownContent::CodeBlock {
                 text: _,
                 text_layout: _,
-            } => {}
+            } => {
+                todo!()
+            }
             MarkdownContent::Indented {
                 flow,
                 decoration: _,
             } => {
-                flow.apply_to_all(|data| {
+                flow.apply_to_all(|(i, data)| {
                     data.layout(
                         font_ctx,
                         layout_ctx,
                         width - theme.markdown_indentation_decoration_width,
                         theme,
+                        i == 0
                     );
                 });
-
-                // TODO: Draw indentation decoration
             }
             MarkdownContent::List { list } => {
-                let indentation: f32 = match &mut list.marker {
-                    ListMarker::Symbol { symbol, layout } => {
-                        let mut builder =
-                            text_to_builder(symbol, &[], font_ctx, layout_ctx);
-                        let mut marker_layout = builder.build(&symbol);
-                        // TODO: Maybe it should get some width to prevent some stupid behaviour in some
-                        // corner cases
-                        marker_layout.break_all_lines(None);
-                        *layout = Box::new(marker_layout);
-                        layout.full_width()
-                            + theme.markdown_bullet_list_indentation
-                            + theme.markdown_list_after_indentation
-                    }
-                    ListMarker::Numbers {
-                        start_number,
-                        layouted,
-                    } => {
-                        let mut max_width: f32 = 0.0;
-                        layouted.clear();
-                        for k in 0..list.list.len() {
-                            // Not ideal way to layout the numbered list, but works for now.
-                            let mut str = (k as u32 + *start_number).to_string();
-                            str.push('.');
-                            let mut builder =
-                                text_to_builder(&str, &[], font_ctx, layout_ctx);
-                            let mut marker_layout = builder.build(&str);
-                            // TODO: Maybe it should get some width to prevent some stupid behaviour in some
-                            // corner cases
-                            marker_layout.break_all_lines(None);
-                            marker_layout.align(None, Alignment::End);
-                            let width = marker_layout.full_width()
-                                + theme.markdown_numbered_list_indentation
-                                + theme.markdown_list_after_indentation;
-                            if width > max_width {
-                                max_width = width;
-                            }
-                            layouted.push(marker_layout);
-                        }
-                        max_width
-                    }
-                };
-                list.indentation = indentation;
-
-                for element in list.list.iter_mut() {
-                    element.apply_to_all(|data| {
-                        data.layout(
-                            font_ctx,
-                            layout_ctx,
-                            width - indentation,
-                            theme,
-                        );
-                    });
-                }
+                list.layout(font_ctx, layout_ctx, width, theme);
             }
-            MarkdownContent::HorizontalLine { height: _ } => {}
-            MarkdownContent::Header {
-                level,
-                text,
-                text_layout,
-                markers,
-            } => {
-                let mut builder =
-                    text_to_builder(text, markers, font_ctx, layout_ctx);
-                let font_size = match level {
-                    HeadingLevel::H1 => theme.text_size as f32 * 2.125,
-                    HeadingLevel::H2 => theme.text_size as f32 * 1.875,
-                    HeadingLevel::H3 => theme.text_size as f32 * 1.5,
-                    HeadingLevel::H4 => theme.text_size as f32 * 1.25,
-                    HeadingLevel::H5 => theme.text_size as f32 * 1.125,
-                    HeadingLevel::H6 => theme.text_size as f32,
-                };
-                let line_height = match level {
-                    // TODO: Experiment with line height to get better results???
-                    HeadingLevel::H1 => 2.0,
-                    HeadingLevel::H2 => 2.0,
-                    HeadingLevel::H3 => 2.0,
-                    HeadingLevel::H4 => 2.0,
-                    HeadingLevel::H5 => 2.0,
-                    HeadingLevel::H6 => 2.0,
-                };
-                builder.push_default(StyleProperty::FontSize(font_size));
-                builder.push_default(StyleProperty::LineHeight(line_height));
-                builder.push_default(StyleProperty::FontWeight(FontWeight::BOLD));
-                let mut layout = builder.build(&text);
-                layout.break_all_lines(Some(width));
-                *text_layout = layout;
+            MarkdownContent::HorizontalLine {height, width: line_width } => {
+                *height = theme.markdown_horizontal_line_height + (theme.markdown_horizontal_line_vertical_margine * 2.0);
+                *line_width = width - (theme.markdown_horizontal_line_horizontal_margine * 2.0);
+            }
+            MarkdownContent::Header { level, text } => {
+                text.load_and_layout_as_header(
+                    font_ctx, layout_ctx, width, theme, *level
+                );
             }
         }
     }
@@ -248,22 +378,12 @@ impl MarkdownContent {
         source_rect: &Rect,
         theme: &Theme,
     ) {
+        // TODO: Draw indentation decoration
         match self {
-            MarkdownContent::Paragraph {
-                top_margin: _,
-                text: _,
-                markers: _,
-                text_layout,
-            } => draw_text(scene, text_layout, translation, source_rect),
-            MarkdownContent::Image {
-                uri: _,
-                title: _,
-                image,
-            } => {
-                if let Some(image) = image {
-                    draw_image(scene, image, translation);
-                }
+            MarkdownContent::Paragraph { text } => {
+                text.draw_text(scene, translation, source_rect)
             }
+            // TODO: Add support for solo image
             MarkdownContent::CodeBlock {
                 text: _,
                 text_layout: _,
@@ -282,6 +402,7 @@ impl MarkdownContent {
                 // corner cases
                 // TODO: Maybe the LayoutFlow should have similar interface to list so it can be
                 // easily used to make the list bullet point and other stuff.
+                // TODO: Make it into a function.
                 for (index, flow) in list.list.iter().enumerate() {
                     let mut translation_elem = translation;
                     translation_elem.x += list.indentation as f64;
@@ -299,10 +420,11 @@ impl MarkdownContent {
                             marker_translation.x +=
                                 theme.markdown_bullet_list_indentation as f64;
                             draw_text(
-                                scene,
                                 layout,
+                                scene,
                                 marker_translation,
                                 source_rect,
+                                &[]
                             );
                         }
                         ListMarker::Numbers {
@@ -315,26 +437,146 @@ impl MarkdownContent {
                                 - theme.markdown_list_after_indentation)
                                 as f64;
                             draw_text(
-                                scene,
                                 &layouted[index],
+                                scene,
                                 marker_translation,
                                 source_rect,
+                                &[],
                             );
                         }
                     }
                     translation.y += flow.height() as f64;
                 }
             }
-            MarkdownContent::HorizontalLine { height: _ } => todo!(),
+            MarkdownContent::HorizontalLine { height: _, width } => {
+                let y1 = theme.markdown_horizontal_line_vertical_margine as f64 + theme.markdown_horizontal_line_height as f64 / 2.0;
+                let x1 = theme.markdown_horizontal_line_horizontal_margine as f64;
+                let x2 = x1 + *width as f64;
+                let underline_shape = Line::new((x1, y1), (x2, y1));
+
+                let stroke = Stroke {
+                    width: theme.markdown_horizontal_line_height as f64,
+                    join: Join::Bevel,
+                    miter_limit: 4.0,
+                    start_cap: Cap::Round,
+                    end_cap: Cap::Round,
+                    dash_pattern: Default::default(),
+                    dash_offset: 0.0,
+                };
+
+                let transform = Affine::translate(translation);
+
+                scene.stroke(
+                    &stroke,
+                    transform,
+                    theme.markdown_horizontal_line_color,
+                    Some(Affine::IDENTITY),
+                    &underline_shape,
+                );
+            },
             MarkdownContent::Header {
                 level: _,
-                text: _,
-                text_layout,
-                markers: _,
+                text,
             } => {
-                draw_text(scene, text_layout, translation, source_rect);
+                text.draw_text(scene, translation, source_rect);
             }
         }
+    }
+}
+
+fn draw_text(
+    layout: &Layout<MarkdownBrush>,
+    scene: &mut Scene,
+    translation: Vec2,
+    source_rect: &Rect,
+    inlined_images: &[InlinedImage],
+) {
+    let transform: Affine = Affine::translate(translation);
+    let mut top_line_index = if let Some((cluster, _)) =
+        Cluster::from_point(layout, 0.0, source_rect.y0 as f32)
+    {
+        cluster.path().line_index()
+    } else {
+        0
+    };
+    while let Some(line) = layout.get(top_line_index) {
+        let line_metrics = line.metrics();
+        if line_metrics.min_coord > source_rect.y1 as f32 {
+            break;
+        }
+        for item in line.items() {
+            match item {
+                PositionedLayoutItem::GlyphRun(glyph_run) => {
+                    let style = glyph_run.style();
+                    let text_color = &style.brush;
+
+                    let run = glyph_run.run();
+                    // TODO: This needs to be some kind of a flow layout.
+                    let font = run.font();
+                    let font_size = run.font_size();
+                    let synthesis = run.synthesis();
+                    let glyph_xform = synthesis.skew().map(|angle| {
+                        Affine::skew(angle.to_radians().tan() as f64, 0.0)
+                    });
+                    let coords = run.normalized_coords();
+                    scene
+                        .draw_glyphs(font)
+                        .brush(text_color.0)
+                        .hint(true)
+                        .transform(transform)
+                        .glyph_transform(glyph_xform)
+                        .font_size(font_size)
+                        .normalized_coords(coords)
+                        .draw(
+                            Fill::NonZero,
+                            glyph_run.positioned_glyphs().map(|glyph| {
+                                vello::Glyph {
+                                    id: glyph.id as _,
+                                    x: glyph.x,
+                                    y: glyph.y,
+                                }
+                            }),
+                        );
+
+                    let run_metrics = run.metrics();
+                    if let Some(underline) = &style.underline {
+                        draw_underline(
+                            scene,
+                            underline,
+                            &glyph_run,
+                            run_metrics,
+                            &transform,
+                        );
+                    }
+
+                    if let Some(strikethrough) = &style.strikethrough {
+                        draw_strikethrough(
+                            scene,
+                            strikethrough,
+                            &glyph_run,
+                            run_metrics,
+                            &transform,
+                        );
+                    }
+                }
+                PositionedLayoutItem::InlineBox(positioned_inline_box) => {
+                    // TODO: What to do when this thing fails???
+                    let image = &inlined_images[positioned_inline_box.id as usize];
+                    let image_translation = translation
+                        + Vec2::new(
+                            positioned_inline_box.x as f64,
+                            positioned_inline_box.y as f64,
+                        );
+                    // TODO: The unwrap is not nice...
+                    draw_image(
+                        scene,
+                        image.data.as_ref().unwrap(),
+                        image_translation,
+                    );
+                }
+            }
+        }
+        top_line_index += 1;
     }
 }
 
@@ -342,16 +584,13 @@ impl LayoutData for MarkdownContent {
     fn height(&self) -> f32 {
         match self {
             MarkdownContent::Paragraph {
-                top_margin,
-                text: _,
-                markers: _,
-                text_layout,
-            } => text_layout.height() + top_margin,
-            MarkdownContent::Image {
-                uri: _,
-                title: _,
-                image,
-            } => image.as_ref().map(|i| i.height as f32).unwrap_or(0.0),
+                text,
+            } => text.height(),
+            //MarkdownContent::Image {
+            //    uri: _,
+            //    title: _,
+            //    image,
+            //} => image.as_ref().map(|i| i.height as f32).unwrap_or(0.0),
             MarkdownContent::CodeBlock {
                 text: _,
                 text_layout,
@@ -363,13 +602,11 @@ impl LayoutData for MarkdownContent {
             MarkdownContent::List { list } => {
                 list.list.iter().map(|l| l.height()).sum()
             }
-            MarkdownContent::HorizontalLine { height } => *height,
+            MarkdownContent::HorizontalLine { height, width: _ } => *height,
             MarkdownContent::Header {
                 level: _,
-                text: _,
-                text_layout,
-                markers: _,
-            } => text_layout.height(),
+                text,
+            } => text.height(),
         }
     }
 }
@@ -380,6 +617,38 @@ pub struct TextMarker {
     start_pos: usize,
     end_pos: usize,
     kind: MarkerKind,
+}
+
+impl TextMarker {
+fn feed_to_builder<'a>(
+    &self,
+    builder: &'a mut RangedBuilder<MarkdownBrush>,
+    theme: &'a Theme,
+) {
+    let rang = self.start_pos..self.end_pos;
+    match self.kind {
+        MarkerKind::Bold => {
+            builder.push(StyleProperty::FontWeight(FontWeight::BOLD), rang)
+        }
+        MarkerKind::Italic => {
+            builder.push(StyleProperty::FontStyle(FontStyle::Italic), rang)
+        }
+        MarkerKind::Strikethrough => {
+            builder.push(StyleProperty::Strikethrough(true), rang)
+        }
+        MarkerKind::InlineCode => {
+            builder.push(
+                StyleProperty::FontStack(theme.monospace_font_stack.clone()),
+                rang.clone(),
+            );
+            builder.push(
+                StyleProperty::Brush(MarkdownBrush(theme.monospace_text_color)),
+                rang,
+            );
+        }
+    }
+}
+
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -486,9 +755,7 @@ fn process_header_events<'a, T: BrokenLinkCallback<'a>>(
             Event::End(TagEnd::Heading(_)) => {
                 return MarkdownContent::Header {
                     level: *header_level,
-                    text,
-                    markers: marker_state.markers,
-                    text_layout: Layout::new(),
+                    text: MarkdownText::new(text, marker_state.markers, Vec::new(), Vec::new()),
                 }
             }
             e => {
@@ -526,6 +793,8 @@ fn process_events<'a, T: BrokenLinkCallback<'a>>(
 
     let mut text = String::new();
     let mut marker_state = MarkeerState::new();
+    let mut inline_images = Vec::new();
+    let mut url: String = String::new();
 
     // TODO: Make sure the firsts element margin is 0.0.
     while let Some(event) = events.next() {
@@ -543,7 +812,7 @@ fn process_events<'a, T: BrokenLinkCallback<'a>>(
                 Tag::Image {
                     link_type: _,
                     dest_url,
-                    title,
+                    title: _,
                     id: _,
                 } => {
                     // TODO: Use the text...
@@ -551,18 +820,15 @@ fn process_events<'a, T: BrokenLinkCallback<'a>>(
                     // TODO: Maybe images should be done as markers instead and I
                     // should just collect images into some `HashMap`.
                     let _some_text = process_image_events(events);
-                    res.push(MarkdownContent::Image {
-                        uri: dest_url.to_string(),
-                        title: title.to_string(),
-                        image: None,
-                    })
+                    inline_images.push(InlinedImage::new(dest_url.to_string(), text.len()));
                 }
                 Tag::CodeBlock(_kind) => { // TODO: Add code block
                 }
                 Tag::Table(_alignments) => {
                     warn!("Markdown tables not supported")
                 }
-                Tag::Paragraph => {}
+                Tag::Paragraph => {
+                }
                 Tag::Heading {
                     level,
                     id: _,
@@ -574,8 +840,9 @@ fn process_events<'a, T: BrokenLinkCallback<'a>>(
                         events,
                         Some(Event::End(TagEnd::BlockQuote(*block_quote_kind))),
                     );
+                    // TODO: Set specific decoration.
                     res.push(MarkdownContent::Indented {
-                        decoration: IndentationDecoration {},
+                        decoration: IndentationDecoration::Indentation {},
                         flow,
                     });
                 }
@@ -595,7 +862,7 @@ fn process_events<'a, T: BrokenLinkCallback<'a>>(
                         }
                     };
                     res.push(MarkdownContent::List {
-                        list: List {
+                        list: MarkdownList {
                             marker,
                             list,
                             indentation: 0.0,
@@ -620,7 +887,9 @@ fn process_events<'a, T: BrokenLinkCallback<'a>>(
                     dest_url: _,
                     title: _,
                     id: _,
-                } => todo!(),
+                } => {
+                    //todo!()
+                }
                 Tag::MetadataBlock(_metadata_block_kind) => {
                     warn!("MetadataBlock in markdown are not supported")
                 }
@@ -629,16 +898,14 @@ fn process_events<'a, T: BrokenLinkCallback<'a>>(
             Event::End(end_tag) => {
                 match end_tag {
                     TagEnd::Paragraph => {
-                        // TODO: Work on the top_margin
-                        if !text.trim().is_empty() {
+                        // TODO: Work on the links and inlined_images
+                        if !text.trim().is_empty() || !inline_images.is_empty() {
                             res.push(MarkdownContent::Paragraph {
-                                top_margin: 10.0,
-                                text: text.clone(),
-                                markers: marker_state.markers.clone(),
-                                text_layout: Layout::new(),
+                                text: MarkdownText::new(text.clone(), marker_state.markers.clone(), inline_images.clone(), Vec::new()),
                             });
                             text.clear();
                             marker_state.markers.clear();
+                            inline_images.clear();
                         }
                     }
                     TagEnd::CodeBlock => todo!(),
@@ -648,7 +915,7 @@ fn process_events<'a, T: BrokenLinkCallback<'a>>(
                     TagEnd::TableHead => todo!(),
                     TagEnd::TableRow => todo!(),
                     TagEnd::TableCell => todo!(),
-                    TagEnd::Link => todo!(),
+                    TagEnd::Link => {} //todo!(),
                     e => {
                         warn!("Markdown parsing unprocessed end tag: {e:?}");
                     }
@@ -686,7 +953,7 @@ fn process_events<'a, T: BrokenLinkCallback<'a>>(
                 // This adds random value. It will be recalculated anyway.
                 // TODO: Maybe it there should be additional step which adds
                 // these heights based on the theme???
-                res.push(MarkdownContent::HorizontalLine { height: 0.0 })
+                res.push(MarkdownContent::HorizontalLine { height: 0.0, width: 0.0 })
             }
             Event::FootnoteReference(_text) => {
                 warn!("FootnoteReference in markdown is not supported!")
@@ -711,10 +978,8 @@ fn process_events<'a, T: BrokenLinkCallback<'a>>(
             // TODO: Make nice offset
             // TODO: This should be in theme as well
             // TODO: It should be relative to the font size
-            top_margin: 12.0,
-            text,
-            markers: marker_state.markers,
-            text_layout: Layout::new(),
+            //top_margin: 12.0,
+            text: MarkdownText::new(text, marker_state.markers, inline_images, Vec::new()),
         });
     }
 
@@ -734,36 +999,8 @@ fn parse_markdown(text: &str) -> LayoutFlow<MarkdownContent> {
     process_events(&mut parser, None)
 }
 
-fn feed_marker_to_builder<'a>(
-    builder: &'a mut RangedBuilder<MarkdownBrush>,
-    text_marker: &TextMarker,
-    theme: &'a Theme,
-) {
-    let rang = text_marker.start_pos..text_marker.end_pos;
-    match text_marker.kind {
-        MarkerKind::Bold => {
-            builder.push(StyleProperty::FontWeight(FontWeight::BOLD), rang)
-        }
-        MarkerKind::Italic => {
-            builder.push(StyleProperty::FontStyle(FontStyle::Italic), rang)
-        }
-        MarkerKind::Strikethrough => {
-            builder.push(StyleProperty::Strikethrough(true), rang)
-        }
-        MarkerKind::InlineCode => {
-            builder.push(
-                StyleProperty::FontStack(theme.monospace_font_stack.clone()),
-                rang.clone(),
-            );
-            builder.push(
-                StyleProperty::Brush(MarkdownBrush(theme.monospace_text_color)),
-                rang,
-            );
-        }
-    }
-}
-
-fn text_to_builder<'a>(
+// TODO: I don't like this function. I'll need to think of something better.
+fn str_to_builder<'a>(
     text: &'a str,
     markers: &[TextMarker],
     font_ctx: &'a mut FontContext,
@@ -780,7 +1017,7 @@ fn text_to_builder<'a>(
     builder.push_default(StyleProperty::FontStyle(FontStyle::Normal));
     builder.push_default(StyleProperty::LineHeight(1.0));
     for marker in markers.iter() {
-        feed_marker_to_builder(&mut builder, marker, &theme);
+        marker.feed_to_builder(&mut builder, &theme);
     }
     builder
 }
@@ -877,83 +1114,6 @@ fn draw_strikethrough(
     );
 }
 
-fn draw_text(
-    scene: &mut Scene,
-    layout: &Layout<MarkdownBrush>,
-    translation: Vec2,
-    source_rect: &Rect,
-) {
-    let transform: Affine = Affine::translate(translation);
-    let mut top_line_index = if let Some((cluster, _)) =
-        Cluster::from_point(layout, 0.0, source_rect.y0 as f32)
-    {
-        cluster.path().line_index()
-    } else {
-        0
-    };
-    while let Some(line) = layout.get(top_line_index) {
-        let line_metrics = line.metrics();
-        if line_metrics.min_coord > source_rect.y1 as f32 {
-            break;
-        }
-        for item in line.items() {
-            let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
-                continue;
-            };
-            let style = glyph_run.style();
-            let text_color = &style.brush;
-
-            let run = glyph_run.run();
-            // TODO: This needs to be some kind of a flow layout.
-            let font = run.font();
-            let font_size = run.font_size();
-            let synthesis = run.synthesis();
-            let glyph_xform = synthesis
-                .skew()
-                .map(|angle| Affine::skew(angle.to_radians().tan() as f64, 0.0));
-            let coords = run.normalized_coords();
-            scene
-                .draw_glyphs(font)
-                .brush(text_color.0)
-                .hint(true)
-                .transform(transform)
-                .glyph_transform(glyph_xform)
-                .font_size(font_size)
-                .normalized_coords(&coords)
-                .draw(
-                    Fill::NonZero,
-                    glyph_run.positioned_glyphs().map(|glyph| vello::Glyph {
-                        id: glyph.id as _,
-                        x: glyph.x,
-                        y: glyph.y,
-                    }),
-                );
-
-            let run_metrics = run.metrics();
-            if let Some(underline) = &style.underline {
-                draw_underline(
-                    scene,
-                    underline,
-                    &glyph_run,
-                    run_metrics,
-                    &transform,
-                );
-            }
-
-            if let Some(strikethrough) = &style.strikethrough {
-                draw_strikethrough(
-                    scene,
-                    strikethrough,
-                    &glyph_run,
-                    run_metrics,
-                    &transform,
-                );
-            }
-        }
-        top_line_index += 1;
-    }
-}
-
 fn draw_image(scene: &mut Scene, image: &Image, translation: Vec2) {
     let transform: Affine = Affine::translate(translation);
     scene.draw_image(image, transform);
@@ -1029,12 +1189,13 @@ impl Widget for MarkdowWidget {
         // TODO: Think about putting the context into the theme??? Or somewhere else???
         let (font_ctx, _layout_ctx) = ctx.text_contexts();
         if self.dirty || self.max_advance != size.width {
-            self.markdown_layout.apply_to_all(|data| {
+            self.markdown_layout.apply_to_all(|(i, data)| {
                 data.layout(
                     font_ctx,
                     &mut self.layout_ctx,
                     size.width as f32,
                     theme,
+                    i == 0,
                 );
             });
         }

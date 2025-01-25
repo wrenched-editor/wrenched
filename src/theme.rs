@@ -17,12 +17,17 @@ pub struct Theme {
     pub markdown_numbered_list_indentation: f32,
     pub markdown_list_after_indentation: f32,
     pub markdown_indentation_decoration_width: f32,
+    pub markdown_paragraph_top_margine: f32,
+    pub markdown_horizontal_line_height: f32,
+    pub markdown_horizontal_line_vertical_margine: f32,
+    pub markdown_horizontal_line_horizontal_margine: f32,
+    pub markdown_horizontal_line_color: Color,
 }
 
 impl Theme {
     fn new() -> Theme {
         Theme {
-            text_color: Color::from_rgba8(0xf0, 0xf0, 0xea, 0xff),
+            text_color: Color::from_rgb8(0xf0, 0xf0, 0xea),
             text_size: 16,
             scale: 1.0,
             font_stack: FontStack::Single(FontFamily::Generic(
@@ -31,12 +36,17 @@ impl Theme {
             monospace_font_stack: FontStack::Single(FontFamily::Generic(
                 GenericFamily::Monospace,
             )),
-            monospace_text_color: Color::from_rgba8(0xFF, 0x8C, 0x00, 0xff),
+            monospace_text_color: Color::from_rgb8(0xFF, 0x8C, 0x00),
             // TODO: These should scale with text size somehow
             markdown_bullet_list_indentation: 10.0,
             markdown_numbered_list_indentation: 5.0,
             markdown_list_after_indentation: 5.0,
             markdown_indentation_decoration_width: 10.0,
+            markdown_paragraph_top_margine: 10.0,
+            markdown_horizontal_line_height: 2.0,
+            markdown_horizontal_line_vertical_margine: 10.0,
+            markdown_horizontal_line_horizontal_margine: 10.0,
+            markdown_horizontal_line_color: Color::from_rgb8(0x4D,0x4D,0x4D),
         }
     }
 }
