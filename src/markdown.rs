@@ -382,7 +382,7 @@ impl MarkdownText {
         self.height = self.text_layout.height() + self.margine;
     }
 
-   fn layout_as_code<'a>(
+    fn layout_as_code<'a>(
         &mut self,
         font_ctx: &'a mut FontContext,
         layout_ctx: &'a mut LayoutContext<MarkdownBrush>,
@@ -394,7 +394,9 @@ impl MarkdownText {
         builder.push_default(StyleProperty::FontStack(
             theme.monospace_font_stack.clone(),
         ));
-        builder.push_default(StyleProperty::Brush(MarkdownBrush(theme.monospace_text_color)));
+        builder.push_default(StyleProperty::Brush(MarkdownBrush(
+            theme.monospace_text_color,
+        )));
         let mut layout = builder.build(&self.str);
         layout.break_all_lines(Some(width));
         self.text_layout = layout;
@@ -476,7 +478,11 @@ impl MarkdownContent {
                     svg_context,
                 );
             }
-            MarkdownContent::CodeBlock { text, language: _, margine } => {
+            MarkdownContent::CodeBlock {
+                text,
+                language: _,
+                margine,
+            } => {
                 text.layout_as_code(font_ctx, layout_ctx, width, theme, is_first);
             }
             MarkdownContent::Indented {
@@ -539,7 +545,7 @@ impl MarkdownContent {
                 margine: _,
             } => {
                 text.draw_text(scene, translation, source_rect);
-            },
+            }
             MarkdownContent::Indented {
                 flow,
                 decoration: _,
@@ -739,9 +745,11 @@ impl LayoutData for MarkdownContent {
             //    title: _,
             //    image,
             //} => image.as_ref().map(|i| i.height as f32).unwrap_or(0.0),
-            MarkdownContent::CodeBlock { text, language: _, margine } => {
-                text.height() + (margine * 2.0)
-            }
+            MarkdownContent::CodeBlock {
+                text,
+                language: _,
+                margine,
+            } => text.height() + (margine * 2.0),
             MarkdownContent::Indented {
                 flow,
                 decoration: _,
