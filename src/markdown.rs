@@ -270,9 +270,19 @@ impl MarkdownText {
                             .unwrap()
                         }
                         ImageType::Rasterized(format) => {
-                            image::load_from_memory_with_format(&raw_data, format)
-                                .unwrap()
-                                .to_rgba8()
+                            match image::load_from_memory_with_format(
+                                &raw_data, format,
+                            ) {
+                                Ok(image) => image.to_rgba8(),
+                                Err(_) => {
+                                    // Try to fallback to automatic format recognition.
+                                    image::load_from_memory(&raw_data)
+                                        .unwrap_or_else(
+                                        |err| {
+                                            panic!("ERROR: Loading image with path {} failed with error: {}", inlined_image.url, err)
+                                        }).to_rgba8()
+                                }
+                            }
                         }
                     };
 
@@ -372,6 +382,31 @@ impl MarkdownText {
         self.height = self.text_layout.height() + self.margine;
     }
 
+   fn layout_as_code<'a>(
+        &mut self,
+        font_ctx: &'a mut FontContext,
+        layout_ctx: &'a mut LayoutContext<MarkdownBrush>,
+        width: f32,
+        theme: &Theme,
+        is_first: bool,
+    ) {
+        let mut builder = self.pre_fill_builder(font_ctx, layout_ctx);
+        builder.push_default(StyleProperty::FontStack(
+            theme.monospace_font_stack.clone(),
+        ));
+        builder.push_default(StyleProperty::Brush(MarkdownBrush(theme.monospace_text_color)));
+        let mut layout = builder.build(&self.str);
+        layout.break_all_lines(Some(width));
+        self.text_layout = layout;
+
+        self.margine = if is_first {
+            0.0
+        } else {
+            theme.markdown_paragraph_top_margine
+        };
+        self.height = self.text_layout.height() + self.margine;
+    }
+
     fn draw_text(
         &self,
         scene: &mut Scene,
@@ -410,8 +445,9 @@ pub enum MarkdownContent {
         text: MarkdownText,
     },
     CodeBlock {
-        text: String,
-        text_layout: Layout<MarkdownBrush>,
+        language: Option<String>,
+        text: MarkdownText,
+        margine: f32,
     },
     HorizontalLine {
         height: f32,
@@ -440,11 +476,8 @@ impl MarkdownContent {
                     svg_context,
                 );
             }
-            MarkdownContent::CodeBlock {
-                text: _,
-                text_layout: _,
-            } => {
-                todo!()
+            MarkdownContent::CodeBlock { text, language: _, margine } => {
+                text.layout_as_code(font_ctx, layout_ctx, width, theme, is_first);
             }
             MarkdownContent::Indented {
                 flow,
@@ -501,9 +534,12 @@ impl MarkdownContent {
             }
             // TODO: Add support for solo image
             MarkdownContent::CodeBlock {
-                text: _,
-                text_layout: _,
-            } => todo!(),
+                text,
+                language: _,
+                margine: _,
+            } => {
+                text.draw_text(scene, translation, source_rect);
+            },
             MarkdownContent::Indented {
                 flow,
                 decoration: _,
@@ -703,10 +739,9 @@ impl LayoutData for MarkdownContent {
             //    title: _,
             //    image,
             //} => image.as_ref().map(|i| i.height as f32).unwrap_or(0.0),
-            MarkdownContent::CodeBlock {
-                text: _,
-                text_layout,
-            } => text_layout.height(),
+            MarkdownContent::CodeBlock { text, language: _, margine } => {
+                text.height() + (margine * 2.0)
+            }
             MarkdownContent::Indented {
                 flow,
                 decoration: _,
@@ -746,6 +781,7 @@ impl TextMarker {
                 builder.push(StyleProperty::Strikethrough(true), rang)
             }
             MarkerKind::InlineCode => {
+                // TODO: Draw additinal decorations??? Maybe into the brush???
                 builder.push(
                     StyleProperty::FontStack(theme.monospace_font_stack.clone()),
                     rang.clone(),
@@ -879,6 +915,45 @@ fn process_header_events<'a, T: BrokenLinkCallback<'a>>(
     panic!("Header tag parsing expects Heading end tag and none was received");
 }
 
+fn process_code_block_events<'a, T: BrokenLinkCallback<'a>>(
+    events: &mut Parser<'a, T>,
+    language: Option<String>,
+) -> MarkdownContent {
+    let mut text = String::new();
+    for event in events {
+        match event {
+            Event::Text(cow_str) => text.push_str(&cow_str),
+            Event::End(TagEnd::CodeBlock) => {
+                return MarkdownContent::CodeBlock {
+                    text: MarkdownText::new(
+                        text,
+                        Vec::new(),
+                        Vec::new(),
+                        Vec::new(),
+                    ),
+                    language,
+                    margine: 0.0,
+                }
+            }
+            e => {
+                error!("Header tag parsing expects only some event but {e:?} was received")
+            }
+        }
+    }
+    panic!("Header tag parsing expects Heading end tag and none was received");
+}
+
+fn discar_html_block_events<'a, T: BrokenLinkCallback<'a>>(
+    events: &mut Parser<'a, T>,
+) {
+    for event in events.by_ref() {
+        println!("Event: {event:?}");
+        if let Event::End(TagEnd::HtmlBlock) = event {
+            break;
+        }
+    }
+}
+
 fn process_list_events<'a, T: BrokenLinkCallback<'a>>(
     events: &mut Parser<'a, T>,
 ) -> Vec<LayoutFlow<MarkdownContent>> {
@@ -936,7 +1011,18 @@ fn process_events<'a, T: BrokenLinkCallback<'a>>(
                     inline_images
                         .push(InlinedImage::new(dest_url.to_string(), text.len()));
                 }
-                Tag::CodeBlock(_kind) => { // TODO: Add code block
+                Tag::CodeBlock(kind) => {
+                    let lanauge = match kind {
+                        pulldown_cmark::CodeBlockKind::Indented => None,
+                        pulldown_cmark::CodeBlockKind::Fenced(language) => {
+                            if language.is_empty() {
+                                None
+                            } else {
+                                Some(language.to_string())
+                            }
+                        }
+                    };
+                    res.push(process_code_block_events(events, lanauge));
                 }
                 Tag::Table(_alignments) => {
                     warn!("Markdown tables not supported")
@@ -959,7 +1045,10 @@ fn process_events<'a, T: BrokenLinkCallback<'a>>(
                         flow,
                     });
                 }
-                Tag::HtmlBlock => todo!(),
+                Tag::HtmlBlock => {
+                    warn!("HtmlBlock is ignored");
+                    discar_html_block_events(events);
+                }
                 Tag::List(list_marker) => {
                     let list = process_list_events(events);
                     // TODO: Think about the markers. There should be a better way to set them up
@@ -1026,8 +1115,6 @@ fn process_events<'a, T: BrokenLinkCallback<'a>>(
                             inline_images.clear();
                         }
                     }
-                    TagEnd::CodeBlock => todo!(),
-                    TagEnd::HtmlBlock => todo!(),
                     TagEnd::FootnoteDefinition => todo!(),
                     TagEnd::Table => todo!(),
                     TagEnd::TableHead => todo!(),
