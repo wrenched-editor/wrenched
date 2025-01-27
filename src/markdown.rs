@@ -1,7 +1,8 @@
 use std::{
     fs,
     ops::Range,
-    path::{Path, PathBuf}, sync::Arc,
+    path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use accesskit::Role;
@@ -220,19 +221,23 @@ impl MarkdownText {
                     let buf = fs::read(&inlined_image.url).unwrap();
                     let extension = path.extension().unwrap();
                     let image_type = if extension.eq_ignore_ascii_case("svg") {
-                            ImageType::Svg
-                        } else {
-                            ImageType::Rasterized(image::ImageFormat::from_extension(extension).unwrap())
-                        };
+                        ImageType::Svg
+                    } else {
+                        ImageType::Rasterized(
+                            image::ImageFormat::from_extension(extension).unwrap(),
+                        )
+                    };
                     (buf, image_type)
                 } else {
                     let mut response = ureq::get(&inlined_image.url).call().unwrap();
                     let mime_type = response.body().mime_type().unwrap();
                     let image_type = if mime_type == "image/svg+xml" {
-                            ImageType::Svg
-                        } else {
-                            ImageType::Rasterized(image::ImageFormat::from_mime_type(mime_type).unwrap())
-                        };
+                        ImageType::Svg
+                    } else {
+                        ImageType::Rasterized(
+                            image::ImageFormat::from_mime_type(mime_type).unwrap(),
+                        )
+                    };
                     let buf = response.body_mut().read_to_vec().unwrap();
                     (buf, image_type)
                 };
@@ -240,23 +245,36 @@ impl MarkdownText {
                 let image_data: image::ImageBuffer<image::Rgba<u8>, Vec<u8>> =
                     match image_type {
                         ImageType::Svg => {
-                        let svg_str = String::from_utf8(raw_data).unwrap();
-                        let options = usvg::Options{
-                            fontdb: svg_context.fontdb.clone(),
-                            ..usvg::Options::default()
-                        };
+                            let svg_str = String::from_utf8(raw_data).unwrap();
+                            let options = usvg::Options {
+                                fontdb: svg_context.fontdb.clone(),
+                                ..usvg::Options::default()
+                            };
 
-                        let svg_tree = usvg::Tree::from_str(&svg_str, &options).unwrap();
-                        let width = svg_tree.size().width().ceil() as u32;
-                        let height = svg_tree.size().height().ceil() as u32;
-                        let mut pixmap = tiny_skia::Pixmap::new(width, height).unwrap();
-                        resvg::render(&svg_tree, tiny_skia::Transform::identity(), &mut pixmap.as_mut());
-                        image::ImageBuffer::from_raw(width, height, pixmap.take()).unwrap()
-                    }
-                    ImageType::Rasterized(format) => {
-                        image::load_from_memory_with_format(&raw_data, format).unwrap().to_rgba8()
-                    }
-                };
+                            let svg_tree =
+                                usvg::Tree::from_str(&svg_str, &options).unwrap();
+                            let width = svg_tree.size().width().ceil() as u32;
+                            let height = svg_tree.size().height().ceil() as u32;
+                            let mut pixmap =
+                                tiny_skia::Pixmap::new(width, height).unwrap();
+                            resvg::render(
+                                &svg_tree,
+                                tiny_skia::Transform::identity(),
+                                &mut pixmap.as_mut(),
+                            );
+                            image::ImageBuffer::from_raw(
+                                width,
+                                height,
+                                pixmap.take(),
+                            )
+                            .unwrap()
+                        }
+                        ImageType::Rasterized(format) => {
+                            image::load_from_memory_with_format(&raw_data, format)
+                                .unwrap()
+                                .to_rgba8()
+                        }
+                    };
 
                 let (width, height) = image_data.dimensions();
                 inlined_image.data = Some(Image::new(
@@ -414,7 +432,12 @@ impl MarkdownContent {
         match self {
             MarkdownContent::Paragraph { text } => {
                 text.load_and_layout_text(
-                    font_ctx, layout_ctx, width, theme, is_first, svg_context,
+                    font_ctx,
+                    layout_ctx,
+                    width,
+                    theme,
+                    is_first,
+                    svg_context,
                 );
             }
             MarkdownContent::CodeBlock {
@@ -452,7 +475,12 @@ impl MarkdownContent {
             }
             MarkdownContent::Header { level, text } => {
                 text.load_and_layout_as_header(
-                    font_ctx, layout_ctx, width, theme, *level, svg_context,
+                    font_ctx,
+                    layout_ctx,
+                    width,
+                    theme,
+                    *level,
+                    svg_context,
                 );
             }
         }
@@ -1150,7 +1178,9 @@ impl MarkdowWidget {
         // being committed in the repo. Needs to be resolved ASAP.
         fontdb.load_fonts_dir("./fonts/");
 
-        let svg_context: SvgContext = SvgContext{ fontdb: Arc::new(fontdb) };
+        let svg_context: SvgContext = SvgContext {
+            fontdb: Arc::new(fontdb),
+        };
         Self {
             markdown_layout,
             dirty: true,
@@ -1323,7 +1353,11 @@ impl Widget for MarkdowWidget {
         size
     }
 
-    fn paint(&mut self, ctx: &mut masonry::core::PaintCtx, scene: &mut vello::Scene) {
+    fn paint(
+        &mut self,
+        ctx: &mut masonry::core::PaintCtx,
+        scene: &mut vello::Scene,
+    ) {
         scene.push_layer(
             BlendMode::default(),
             1.,

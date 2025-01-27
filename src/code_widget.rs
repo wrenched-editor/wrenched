@@ -5,14 +5,20 @@ use std::{
 
 use accesskit::{Node, Role};
 use kurbo::{Point, Size, Vec2};
-use masonry::core::{AccessCtx, AccessEvent, BoxConstraints, ComposeCtx, EventCtx, LayoutCtx, PaintCtx, PointerEvent, QueryCtx, RegisterCtx, TextEvent, Update, UpdateCtx, Widget, WidgetId};
+use masonry::core::{
+    AccessCtx, AccessEvent, BoxConstraints, ComposeCtx, EventCtx, LayoutCtx,
+    PaintCtx, PointerEvent, QueryCtx, RegisterCtx, TextEvent, Update, UpdateCtx,
+    Widget, WidgetId,
+};
 use parley::StyleProperty;
 use smallvec::SmallVec;
 use tracing::debug;
 use vello::{peniko::Color, Scene};
 use winit::window::CursorIcon;
 use xilem::{
-    core::{Message, MessageResult, View, ViewMarker}, view::PointerButton, FontWeight, Pod, ViewCtx
+    core::{Message, MessageResult, View, ViewMarker},
+    view::PointerButton,
+    FontWeight, Pod, ViewCtx,
 };
 
 use crate::{
@@ -290,11 +296,7 @@ impl Widget for CodeWidget {
         true
     }
 
-    fn get_cursor(
-        &self,
-        _ctx: &QueryCtx,
-        pos: Point,
-    ) -> CursorIcon {
+    fn get_cursor(&self, _ctx: &QueryCtx, pos: Point) -> CursorIcon {
         debug!("CodeWidget::get_cursor: {pos:?}");
         CursorIcon::Text
     }
