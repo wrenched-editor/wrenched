@@ -1,52 +1,192 @@
-# Header 1
-## Header 2
-### Header 3
-#### Header 4
-##### Header 5
-###### Header 6
-
-asdfasdf
-
-# Lorem ipsum
-This is _standard_ **paragraph**
-Lorem ipsum dolor sit amet, `consectetur adipiscing elit`. Pellentesque nunc massa, egestas vel tellus a, vehicula viverra dolor. Ut sit amet nibh viverra, porttitor lectus non, lacinia arcu. Suspendisse urna neque, hendrerit a elit at, tincidunt porttitor risus. Aliquam mauris quam, efficitur nec pretium non, bibendum eu massa. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed feugiat porta nunc eu vestibulum. Mauris sit amet erat ut quam tincidunt sollicitudin. Phasellus vulputate erat erat, eget gravida ligula finibus id. Curabitur risus neque, facilisis sed suscipit non, rhoncus nec mi.
-
 ![Test image](./small-image-test.png)
+![Test image](small-image-test.png)
 
- * Element 1.
+[![test badge](https://img.shields.io/badge/wrench-is_%F0%9F%94%A7-blue)](https://github.com/wrenched-editor/wrenched)
+[![test badge2](https://img.shields.io/badge/any_text-you_like-blue)](https://github.com/wrenched-editor/wrenched)
 
-   Donec facilisis egestas ultrices. Donec ultrices urna et tellus malesuada
-   convallis. Pellentesque habitant morbi tristique senectus et netus et malesuada
-   fames ac turpis egestas. Nam imperdiet pulvinar lobortis. Phasellus ut erat
-   ullamcorper nulla varius egestas. Interdum et malesuada fames ac ante ipsum
-   primis in faucibus. In a nisl mauris. Proin auctor maximus elit, a eleifend
-   urna pellentesque a. Etiam dictum feugiat eros, vitae sagittis nulla eleifend
-   id. In porttitor quam in nisi molestie, quis eleifend tortor sodales. Sed
-   consectetur mollis risus id faucibus. Maecenas ante leo, consequat vitae
-   ullamcorper a, vestibulum non odio. In a consectetur mi. Nulla libero magna,
-   ullamcorper ac pulvinar ut, lobortis vel quam. Pellentesque malesuada convallis
-   ligula, vel sodales dolor molestie eget. Cras pellentesque lobortis nisl,
-   vel aliquam ligula pulvinar at.
+---
 
- * Element 2.
- * Element 3.
- 
- 1. Element 1.
- 2. Element 2.
- 3. Element 3.
- 4. Element 3.
- 5. Element 3.
- 6. Element 3.
- 7. Element 3.
- 8. Element 3.
- 9. Element 3.
- 10. Element 3.
- 11. Element 3.
+# h1 Heading 8-)
+## h2 Heading
+### h3 Heading
+#### h4 Heading
+##### h5 Heading
+###### h6 Heading
 
-Donec facilisis egestas ultrices. Donec ultrices urna et tellus malesuada convallis. Pellentesque habitant morbi tristique senectus et netus et malesuada fames ac turpis egestas. Nam imperdiet pulvinar lobortis. Phasellus ut erat ullamcorper nulla varius egestas. Interdum et malesuada fames ac ante ipsum primis in faucibus. In a nisl mauris. Proin auctor maximus elit, a eleifend urna pellentesque a. Etiam dictum feugiat eros, vitae sagittis nulla eleifend id. In porttitor quam in nisi molestie, quis eleifend tortor sodales. Sed consectetur mollis risus id faucibus. Maecenas ante leo, consequat vitae ullamcorper a, vestibulum non odio. In a consectetur mi. Nulla libero magna, ullamcorper ac pulvinar ut, lobortis vel quam. Pellentesque malesuada convallis ligula, vel sodales dolor molestie eget. Cras pellentesque lobortis nisl, vel aliquam ligula pulvinar at.
 
-Maecenas sagittis quam non eros placerat venenatis. Cras consectetur, purus et tempus tincidunt, massa magna commodo urna, nec luctus arcu lacus id ligula. Duis vel lectus ut diam lobortis mattis ac vehicula mauris. Suspendisse euismod ornare condimentum. Curabitur orci metus, pellentesque at auctor sed, aliquet ut nunc. Nullam pulvinar urna sed dui interdum egestas. Aenean dolor urna, fermentum a porta in, pulvinar sit amet elit. Donec congue bibendum tellus in cursus. Phasellus diam lorem, convallis eget orci eu, ornare suscipit orci. Integer pretium tortor nec elit vulputate iaculis. Nullam fringilla erat eros, at pulvinar arcu tempus eget. Praesent nec nibh orci.
+## Horizontal Rules
 
-Aliquam vestibulum elit est. Ut viverra bibendum dapibus. Nunc massa libero, molestie sed lobortis sed, fermentum in orci. Etiam imperdiet elementum dui, id tincidunt urna ultricies vel. Nam sed mauris vel urna sodales pretium. Morbi vitae viverra leo. Donec vitae ultricies sapien. Nunc vestibulum sem at scelerisque tincidunt. In vitae quam justo. Ut sed congue orci, eget tincidunt metus.
+___
 
-Integer vestibulum congue elit, a porta elit tincidunt vulputate. Vestibulum quis iaculis est. Donec tortor eros, euismod ac erat dignissim, rutrum ullamcorper dolor. Aenean euismod nisl est, vel tincidunt felis faucibus id. Donec vehicula nunc vel nisl molestie, venenatis fermentum odio suscipit. Phasellus tristique libero felis, vel faucibus massa egestas ac. Vivamus semper lacus a ante pulvinar, ut finibus augue ornare. Pellentesque tincidunt nisi id euismod rutrum. Cras lectus ante, facilisis ut posuere ut, auctor sollicitudin ante. Vestibulum quis mauris tincidunt, porta lorem a, commodo ex. Vivamus dignissim sagittis velit, eu tristique lectus eleifend at. Phasellus sed consectetur ipsum. Nunc leo mauris, viverra vel luctus in, finibus a libero. Etiam suscipit placerat orci sit amet interdum. Nunc maximus vel quam nec mollis. Nunc enim magna, imperdiet sit amet urna et, aliquet tristique sapien.
+---
+
+***
+
+
+## Typographic replacements
+
+Enable typographer option to see result.
+
+(c) (C) (r) (R) (tm) (TM) (p) (P) +-
+
+test.. test... test..... test?..... test!....
+
+!!!!!! ???? ,,  -- ---
+
+"Smartypants, double quotes" and 'single quotes'
+
+
+## Emphasis
+
+**This is bold text**
+
+__This is bold text__
+
+*This is italic text*
+
+_This is italic text_
+
+~~Strikethrough~~
+
+
+## Blockquotes
+
+
+> Blockquotes can also be nested...
+>> ...by using additional greater-than signs right next to each other...
+> > > ...or with spaces between arrows.
+
+
+## Lists
+
+Unordered
+
++ Create a list by starting a line with `+`, `-`, or `*`
++ Sub-lists are made by indenting 2 spaces:
+  - Marker character change forces new list start:
+    * Ac tristique libero volutpat at
+    + Facilisis in pretium nisl aliquet
+    - Nulla volutpat aliquam velit
++ Very easy!
+
+Ordered
+
+1. Lorem ipsum dolor sit amet
+2. Consectetur adipiscing elit
+3. Integer molestie lorem at massa
+
+
+1. You can use sequential numbers...
+1. ...or keep all the numbers as `1.`
+
+Start numbering with offset:
+
+57. foo
+1. bar
+
+
+## Links
+
+[link text](http://dev.nodeca.com)
+
+[link with title](http://nodeca.github.io/pica/demo/ "title text!")
+
+Autoconverted link https://github.com/nodeca/pica (enable linkify to see)
+
+
+## Images
+
+![Minion](./small-image-test.png)
+![Stormtroopocat](./small-image-test.png "The Stormtroopocat")
+
+Like links, Images also have a footnote style syntax
+
+![Alt text][id]
+
+With a reference later in the document defining the URL location:
+
+[id]: ./small-image-test.png  "The Dojocat"
+
+
+## Plugins
+
+The killer feature of `markdown-it` is very effective support of
+[syntax plugins](https://www.npmjs.org/browse/keyword/markdown-it-plugin).
+
+
+### [Emojies](https://github.com/markdown-it/markdown-it-emoji)
+
+> Classic markup: :wink: :cry: :laughing: :yum:
+>
+> Shortcuts (emoticons): :-) :-( 8-) ;)
+
+see [how to change output](https://github.com/markdown-it/markdown-it-emoji#change-output) with twemoji.
+
+
+### [Subscript](https://github.com/markdown-it/markdown-it-sub) / [Superscript](https://github.com/markdown-it/markdown-it-sup)
+
+- 19^th^
+- H~2~O
+
+
+### [\<ins>](https://github.com/markdown-it/markdown-it-ins)
+
+++Inserted text++
+
+
+### [\<mark>](https://github.com/markdown-it/markdown-it-mark)
+
+==Marked text==
+
+
+### [Footnotes](https://github.com/markdown-it/markdown-it-footnote)
+
+Footnote 1 link[^first].
+
+Footnote 2 link[^second].
+
+Inline footnote^[Text of inline footnote] definition.
+
+Duplicated footnote reference[^second].
+
+[^first]: Footnote **can have markup**
+
+[^second]: Footnote text.
+
+
+### [Definition lists](https://github.com/markdown-it/markdown-it-deflist)
+
+Term 1
+
+:   Definition 1
+with lazy continuation.
+
+Term 2 with *inline markup*
+
+:   Definition 2
+    Third paragraph of definition 2.
+
+_Compact style:_
+
+Term 1
+  ~ Definition 1
+
+Term 2
+  ~ Definition 2a
+  ~ Definition 2b
+
+
+### [Abbreviations](https://github.com/markdown-it/markdown-it-abbr)
+
+This is HTML abbreviation example.
+
+It converts "HTML", but keep intact partial entries like "xxxHTMLyyy" and so on.
+
+*[HTML]: Hyper Text Markup Language
+
+### [Custom containers](https://github.com/markdown-it/markdown-it-container)
+
+::: warning
+*here be dragons*
+:::
+

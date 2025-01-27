@@ -4,19 +4,15 @@ use std::{
 };
 
 use accesskit::{Node, Role};
-use kurbo::Vec2;
-use masonry::{
-    vello::Scene, AccessCtx, AccessEvent, BoxConstraints, EventCtx, LayoutCtx,
-    PaintCtx, Point, PointerButton, PointerEvent, RegisterCtx, Size, TextEvent,
-    Update, UpdateCtx, Widget, WidgetId,
-};
+use kurbo::{Point, Size, Vec2};
+use masonry::core::{AccessCtx, AccessEvent, BoxConstraints, ComposeCtx, EventCtx, LayoutCtx, PaintCtx, PointerEvent, QueryCtx, RegisterCtx, TextEvent, Update, UpdateCtx, Widget, WidgetId};
 use parley::StyleProperty;
 use smallvec::SmallVec;
 use tracing::debug;
-use vello::peniko::Color;
+use vello::{peniko::Color, Scene};
+use winit::window::CursorIcon;
 use xilem::{
-    core::{Message, MessageResult, View, ViewMarker},
-    FontWeight, Pod, ViewCtx,
+    core::{Message, MessageResult, View, ViewMarker}, view::PointerButton, FontWeight, Pod, ViewCtx
 };
 
 use crate::{
@@ -280,7 +276,7 @@ impl Widget for CodeWidget {
         debug!("CodeWidget::on_anim_frame interval: {interval}");
     }
 
-    fn compose(&mut self, _ctx: &mut masonry::ComposeCtx) {
+    fn compose(&mut self, _ctx: &mut ComposeCtx) {
         debug!("CodeWidget::compose");
     }
 
@@ -296,11 +292,11 @@ impl Widget for CodeWidget {
 
     fn get_cursor(
         &self,
-        _ctx: &masonry::QueryCtx,
+        _ctx: &QueryCtx,
         pos: Point,
-    ) -> masonry::CursorIcon {
+    ) -> CursorIcon {
         debug!("CodeWidget::get_cursor: {pos:?}");
-        masonry::CursorIcon::Text
+        CursorIcon::Text
     }
 
     fn accessibility_role(&self) -> Role {
@@ -377,9 +373,9 @@ where
         app_state: &mut State,
     ) -> xilem::core::MessageResult<Action, Box<dyn Message>> {
         debug!("CodeView::message");
-        match message.downcast::<masonry::Action>() {
+        match message.downcast::<masonry::core::Action>() {
             Ok(action) => {
-                if let masonry::Action::TextChanged(_text) = *action {
+                if let masonry::core::Action::TextChanged(_text) = *action {
                     (self.code_updated)(app_state)
                 } else {
                     tracing::error!(

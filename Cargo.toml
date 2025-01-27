@@ -6,10 +6,10 @@ edition = "2021"
 [dependencies]
 ropey = "1.6"
 crop = { version = "0.4", features = ["graphemes"] }
-vello = { git = "https://github.com/linebender/vello", rev = "d5ebe12737861c521d7ce6ce02b800278367d07d" }
+vello = { version = "0.4" }
 winit = "0.30"
-xilem = { git = "https://github.com/linebender/xilem", rev = "e179a1a33a96fdf22581ac2b49bd9175c2409178" }
-masonry = { git = "https://github.com/linebender/xilem", rev = "e179a1a33a96fdf22581ac2b49bd9175c2409178" }
+xilem = { git = "https://github.com/linebender/xilem", rev = "d77b31b892cfc5390c3fd49bc2f41da4101e3f24" }
+masonry = { git = "https://github.com/linebender/xilem", rev = "d77b31b892cfc5390c3fd49bc2f41da4101e3f24" }
 accesskit = "^0.17.0"
 tracing = "0.1"
 parley = { git = "https://github.com/linebender/parley", rev = "16b62518d467487ee15cb230fdb28530d89a8cf6", features = ["accesskit"] }
@@ -23,6 +23,10 @@ rand = "0.8.5"
 fontique = "0.2"
 pulldown-cmark = "0.12.2"
 image = "0.25"
+ureq = "3.0.0"
+usvg = "0.44.0"
+tiny-skia = "0.11.4"
+resvg = "0.44.0"
 
 [[bin]]
 name = "wrenched"

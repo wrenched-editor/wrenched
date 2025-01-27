@@ -1,11 +1,13 @@
 use std::{
+    fs,
     ops::Range,
-    path::{Path, PathBuf},
+    path::{Path, PathBuf}, sync::Arc,
 };
 
 use accesskit::Role;
-use kurbo::{Affine, Cap, Join, Line, Rect, Size, Stroke, Vec2};
-use masonry::{EventCtx, PointerEvent, Widget};
+use image;
+use kurbo::{Affine, Cap, Join, Line, Rect, Stroke, Vec2};
+use masonry::core::{EventCtx, PointerEvent, RegisterCtx, Widget};
 use parley::{
     Alignment, Cluster, Decoration, FontContext, FontStyle, GlyphRun, InlineBox,
     Layout, LayoutContext, PositionedLayoutItem, RangedBuilder, RunMetrics,
@@ -17,6 +19,7 @@ use pulldown_cmark::{
 };
 use smallvec::SmallVec;
 use tracing::{debug, error, info, warn};
+use usvg::fontdb;
 use vello::Scene;
 use xilem::{
     core::{Message, MessageResult, View, ViewMarker},
@@ -58,13 +61,24 @@ pub struct MarkdownList {
     indentation: f32,
 }
 
+pub struct SvgContext {
+    fontdb: Arc<fontdb::Database>,
+}
+
+enum ImageType {
+    Svg,
+    Rasterized(image::ImageFormat),
+}
+
 impl MarkdownList {
+    // TODO: the amount of arguments is getting harry.
     fn layout(
         &mut self,
         font_ctx: &mut FontContext,
         layout_ctx: &mut LayoutContext<MarkdownBrush>,
         width: f32,
         theme: &Theme,
+        svg_context: &SvgContext,
     ) {
         let indentation: f32 = match &mut self.marker {
             ListMarker::Symbol { symbol, layout } => {
@@ -110,7 +124,14 @@ impl MarkdownList {
 
         for element in self.list.iter_mut() {
             element.apply_to_all(|(i, data)| {
-                data.layout(font_ctx, layout_ctx, width - indentation, theme, i == 0);
+                data.layout(
+                    font_ctx,
+                    layout_ctx,
+                    width - indentation,
+                    theme,
+                    i == 0,
+                    svg_context,
+                );
             });
         }
     }
@@ -137,17 +158,14 @@ pub struct InlinedImage {
     url: String,
     data: Option<Image>,
     text_index: usize,
-    // TODO: Maybe this should be in data to make it more correct
-    size: Size,
 }
 
 impl InlinedImage {
     fn new(url: String, text_index: usize) -> Self {
         Self {
-        url,
-        text_index,
-        data: None,
-        size: Size::ZERO,
+            url,
+            text_index,
+            data: None,
         }
     }
 }
@@ -163,12 +181,20 @@ pub struct MarkdownText {
     inlined_images: Vec<InlinedImage>,
     links: Vec<Link>,
     height: f32,
+    // TODO: I'm starting to think some more general way of dealing with
+    // margine would be much better. Something like Margine object that would
+    // wrap the element???
     margine: f32,
 }
 
 impl MarkdownText {
-    fn new(str: String, markers: Vec<TextMarker>, inlined_images: Vec<InlinedImage>, links: Vec<Link>) -> Self {
-        Self{
+    fn new(
+        str: String,
+        markers: Vec<TextMarker>,
+        inlined_images: Vec<InlinedImage>,
+        links: Vec<Link>,
+    ) -> Self {
+        Self {
             str,
             markers,
             text_layout: Layout::new(),
@@ -179,12 +205,59 @@ impl MarkdownText {
         }
     }
 
-    fn load_images<'a>(&mut self) {
+    fn load_images(&mut self, svg_context: &SvgContext) {
         for inlined_image in self.inlined_images.iter_mut() {
             if inlined_image.data.is_none() {
                 // TODO: Do something about unwraps
-                // Maybe show broken link image or something
-                let image_data = image::open(&inlined_image.url).unwrap().to_rgba8();
+                // Maybe show broken link image or something and add something
+                // to some error feed???
+                // TODO: Add some cache and make image loading asynchronous.
+
+                // This conditions most likely means it is a local file link.
+                let (raw_data, image_type) = if !inlined_image.url.contains("://") {
+                    // TODO: Process local SVG as well.
+                    let path: &Path = inlined_image.url.as_ref();
+                    let buf = fs::read(&inlined_image.url).unwrap();
+                    let extension = path.extension().unwrap();
+                    let image_type = if extension.eq_ignore_ascii_case("svg") {
+                            ImageType::Svg
+                        } else {
+                            ImageType::Rasterized(image::ImageFormat::from_extension(extension).unwrap())
+                        };
+                    (buf, image_type)
+                } else {
+                    let mut response = ureq::get(&inlined_image.url).call().unwrap();
+                    let mime_type = response.body().mime_type().unwrap();
+                    let image_type = if mime_type == "image/svg+xml" {
+                            ImageType::Svg
+                        } else {
+                            ImageType::Rasterized(image::ImageFormat::from_mime_type(mime_type).unwrap())
+                        };
+                    let buf = response.body_mut().read_to_vec().unwrap();
+                    (buf, image_type)
+                };
+
+                let image_data: image::ImageBuffer<image::Rgba<u8>, Vec<u8>> =
+                    match image_type {
+                        ImageType::Svg => {
+                        let svg_str = String::from_utf8(raw_data).unwrap();
+                        let options = usvg::Options{
+                            fontdb: svg_context.fontdb.clone(),
+                            ..usvg::Options::default()
+                        };
+
+                        let svg_tree = usvg::Tree::from_str(&svg_str, &options).unwrap();
+                        let width = svg_tree.size().width().ceil() as u32;
+                        let height = svg_tree.size().height().ceil() as u32;
+                        let mut pixmap = tiny_skia::Pixmap::new(width, height).unwrap();
+                        resvg::render(&svg_tree, tiny_skia::Transform::identity(), &mut pixmap.as_mut());
+                        image::ImageBuffer::from_raw(width, height, pixmap.take()).unwrap()
+                    }
+                    ImageType::Rasterized(format) => {
+                        image::load_from_memory_with_format(&raw_data, format).unwrap().to_rgba8()
+                    }
+                };
+
                 let (width, height) = image_data.dimensions();
                 inlined_image.data = Some(Image::new(
                     image_data.to_vec().into(),
@@ -224,8 +297,9 @@ impl MarkdownText {
         width: f32,
         theme: &Theme,
         level: HeadingLevel,
+        svg_context: &SvgContext,
     ) {
-        self.load_images();
+        self.load_images(svg_context);
         let mut builder = self.pre_fill_builder(font_ctx, layout_ctx);
         let font_size = match level {
             HeadingLevel::H1 => theme.text_size as f32 * 2.125,
@@ -253,7 +327,6 @@ impl MarkdownText {
         self.margine = theme.markdown_paragraph_top_margine;
         self.height = layout.height();
         self.text_layout = layout;
-
     }
 
     // Loads inlined images and layouts the text with prepared box reserved for
@@ -265,8 +338,9 @@ impl MarkdownText {
         width: f32,
         theme: &Theme,
         is_first: bool,
+        svg_context: &SvgContext,
     ) {
-        self.load_images();
+        self.load_images(svg_context);
         let mut builder = self.pre_fill_builder(font_ctx, layout_ctx);
         let mut layout = builder.build(&self.str);
         layout.break_all_lines(Some(width));
@@ -276,11 +350,16 @@ impl MarkdownText {
             0.0
         } else {
             theme.markdown_paragraph_top_margine
-            };
+        };
         self.height = self.text_layout.height() + self.margine;
     }
 
-    fn draw_text(&self, scene: &mut Scene, mut translation: Vec2, source_rect: &Rect) {
+    fn draw_text(
+        &self,
+        scene: &mut Scene,
+        mut translation: Vec2,
+        source_rect: &Rect,
+    ) {
         translation.y += self.margine as f64;
         draw_text(
             &self.text_layout,
@@ -291,7 +370,7 @@ impl MarkdownText {
         );
     }
 
-    fn height(&self) -> f32{
+    fn height(&self) -> f32 {
         self.height
     }
 }
@@ -330,10 +409,13 @@ impl MarkdownContent {
         width: f32,
         theme: &Theme,
         is_first: bool,
+        svg_context: &SvgContext,
     ) {
         match self {
             MarkdownContent::Paragraph { text } => {
-                text.load_and_layout_text(font_ctx, layout_ctx, width, theme, is_first);
+                text.load_and_layout_text(
+                    font_ctx, layout_ctx, width, theme, is_first, svg_context,
+                );
             }
             MarkdownContent::CodeBlock {
                 text: _,
@@ -351,20 +433,26 @@ impl MarkdownContent {
                         layout_ctx,
                         width - theme.markdown_indentation_decoration_width,
                         theme,
-                        i == 0
+                        i == 0,
+                        svg_context,
                     );
                 });
             }
             MarkdownContent::List { list } => {
-                list.layout(font_ctx, layout_ctx, width, theme);
+                list.layout(font_ctx, layout_ctx, width, theme, svg_context);
             }
-            MarkdownContent::HorizontalLine {height, width: line_width } => {
-                *height = theme.markdown_horizontal_line_height + (theme.markdown_horizontal_line_vertical_margine * 2.0);
-                *line_width = width - (theme.markdown_horizontal_line_horizontal_margine * 2.0);
+            MarkdownContent::HorizontalLine {
+                height,
+                width: line_width,
+            } => {
+                *height = theme.markdown_horizontal_line_height
+                    + (theme.markdown_horizontal_line_vertical_margine * 2.0);
+                *line_width = width
+                    - (theme.markdown_horizontal_line_horizontal_margine * 2.0);
             }
             MarkdownContent::Header { level, text } => {
                 text.load_and_layout_as_header(
-                    font_ctx, layout_ctx, width, theme, *level
+                    font_ctx, layout_ctx, width, theme, *level, svg_context,
                 );
             }
         }
@@ -424,7 +512,7 @@ impl MarkdownContent {
                                 scene,
                                 marker_translation,
                                 source_rect,
-                                &[]
+                                &[],
                             );
                         }
                         ListMarker::Numbers {
@@ -449,7 +537,8 @@ impl MarkdownContent {
                 }
             }
             MarkdownContent::HorizontalLine { height: _, width } => {
-                let y1 = theme.markdown_horizontal_line_vertical_margine as f64 + theme.markdown_horizontal_line_height as f64 / 2.0;
+                let y1 = theme.markdown_horizontal_line_vertical_margine as f64
+                    + theme.markdown_horizontal_line_height as f64 / 2.0;
                 let x1 = theme.markdown_horizontal_line_horizontal_margine as f64;
                 let x2 = x1 + *width as f64;
                 let underline_shape = Line::new((x1, y1), (x2, y1));
@@ -473,11 +562,8 @@ impl MarkdownContent {
                     Some(Affine::IDENTITY),
                     &underline_shape,
                 );
-            },
-            MarkdownContent::Header {
-                level: _,
-                text,
-            } => {
+            }
+            MarkdownContent::Header { level: _, text } => {
                 text.draw_text(scene, translation, source_rect);
             }
         }
@@ -583,9 +669,7 @@ fn draw_text(
 impl LayoutData for MarkdownContent {
     fn height(&self) -> f32 {
         match self {
-            MarkdownContent::Paragraph {
-                text,
-            } => text.height(),
+            MarkdownContent::Paragraph { text } => text.height(),
             //MarkdownContent::Image {
             //    uri: _,
             //    title: _,
@@ -603,10 +687,7 @@ impl LayoutData for MarkdownContent {
                 list.list.iter().map(|l| l.height()).sum()
             }
             MarkdownContent::HorizontalLine { height, width: _ } => *height,
-            MarkdownContent::Header {
-                level: _,
-                text,
-            } => text.height(),
+            MarkdownContent::Header { level: _, text } => text.height(),
         }
     }
 }
@@ -620,35 +701,34 @@ pub struct TextMarker {
 }
 
 impl TextMarker {
-fn feed_to_builder<'a>(
-    &self,
-    builder: &'a mut RangedBuilder<MarkdownBrush>,
-    theme: &'a Theme,
-) {
-    let rang = self.start_pos..self.end_pos;
-    match self.kind {
-        MarkerKind::Bold => {
-            builder.push(StyleProperty::FontWeight(FontWeight::BOLD), rang)
-        }
-        MarkerKind::Italic => {
-            builder.push(StyleProperty::FontStyle(FontStyle::Italic), rang)
-        }
-        MarkerKind::Strikethrough => {
-            builder.push(StyleProperty::Strikethrough(true), rang)
-        }
-        MarkerKind::InlineCode => {
-            builder.push(
-                StyleProperty::FontStack(theme.monospace_font_stack.clone()),
-                rang.clone(),
-            );
-            builder.push(
-                StyleProperty::Brush(MarkdownBrush(theme.monospace_text_color)),
-                rang,
-            );
+    fn feed_to_builder<'a>(
+        &self,
+        builder: &'a mut RangedBuilder<MarkdownBrush>,
+        theme: &'a Theme,
+    ) {
+        let rang = self.start_pos..self.end_pos;
+        match self.kind {
+            MarkerKind::Bold => {
+                builder.push(StyleProperty::FontWeight(FontWeight::BOLD), rang)
+            }
+            MarkerKind::Italic => {
+                builder.push(StyleProperty::FontStyle(FontStyle::Italic), rang)
+            }
+            MarkerKind::Strikethrough => {
+                builder.push(StyleProperty::Strikethrough(true), rang)
+            }
+            MarkerKind::InlineCode => {
+                builder.push(
+                    StyleProperty::FontStack(theme.monospace_font_stack.clone()),
+                    rang.clone(),
+                );
+                builder.push(
+                    StyleProperty::Brush(MarkdownBrush(theme.monospace_text_color)),
+                    rang,
+                );
+            }
         }
     }
-}
-
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -755,7 +835,12 @@ fn process_header_events<'a, T: BrokenLinkCallback<'a>>(
             Event::End(TagEnd::Heading(_)) => {
                 return MarkdownContent::Header {
                     level: *header_level,
-                    text: MarkdownText::new(text, marker_state.markers, Vec::new(), Vec::new()),
+                    text: MarkdownText::new(
+                        text,
+                        marker_state.markers,
+                        Vec::new(),
+                        Vec::new(),
+                    ),
                 }
             }
             e => {
@@ -820,15 +905,15 @@ fn process_events<'a, T: BrokenLinkCallback<'a>>(
                     // TODO: Maybe images should be done as markers instead and I
                     // should just collect images into some `HashMap`.
                     let _some_text = process_image_events(events);
-                    inline_images.push(InlinedImage::new(dest_url.to_string(), text.len()));
+                    inline_images
+                        .push(InlinedImage::new(dest_url.to_string(), text.len()));
                 }
                 Tag::CodeBlock(_kind) => { // TODO: Add code block
                 }
                 Tag::Table(_alignments) => {
                     warn!("Markdown tables not supported")
                 }
-                Tag::Paragraph => {
-                }
+                Tag::Paragraph => {}
                 Tag::Heading {
                     level,
                     id: _,
@@ -901,7 +986,12 @@ fn process_events<'a, T: BrokenLinkCallback<'a>>(
                         // TODO: Work on the links and inlined_images
                         if !text.trim().is_empty() || !inline_images.is_empty() {
                             res.push(MarkdownContent::Paragraph {
-                                text: MarkdownText::new(text.clone(), marker_state.markers.clone(), inline_images.clone(), Vec::new()),
+                                text: MarkdownText::new(
+                                    text.clone(),
+                                    marker_state.markers.clone(),
+                                    inline_images.clone(),
+                                    Vec::new(),
+                                ),
                             });
                             text.clear();
                             marker_state.markers.clear();
@@ -953,7 +1043,10 @@ fn process_events<'a, T: BrokenLinkCallback<'a>>(
                 // This adds random value. It will be recalculated anyway.
                 // TODO: Maybe it there should be additional step which adds
                 // these heights based on the theme???
-                res.push(MarkdownContent::HorizontalLine { height: 0.0, width: 0.0 })
+                res.push(MarkdownContent::HorizontalLine {
+                    height: 0.0,
+                    width: 0.0,
+                })
             }
             Event::FootnoteReference(_text) => {
                 warn!("FootnoteReference in markdown is not supported!")
@@ -979,7 +1072,12 @@ fn process_events<'a, T: BrokenLinkCallback<'a>>(
             // TODO: This should be in theme as well
             // TODO: It should be relative to the font size
             //top_margin: 12.0,
-            text: MarkdownText::new(text, marker_state.markers, inline_images, Vec::new()),
+            text: MarkdownText::new(
+                text,
+                marker_state.markers,
+                inline_images,
+                Vec::new(),
+            ),
         });
     }
 
@@ -1028,6 +1126,7 @@ pub struct MarkdowWidget {
     max_advance: f64,
     dirty: bool,
     scroll: Vec2,
+    svg_context: SvgContext,
 }
 
 impl MarkdowWidget {
@@ -1036,12 +1135,29 @@ impl MarkdowWidget {
         let content: String =
             String::from_utf8(std::fs::read(&markdown_file).unwrap()).unwrap();
         let markdown_layout = parse_markdown(&content);
+        // TODO: This one should be "global".
+        let mut fontdb = fontdb::Database::default();
+        fontdb.load_system_fonts();
+
+        // TODO: Add default fonts into the package so they are always present.
+        fontdb.set_serif_family("Times New Roman");
+        fontdb.set_sans_serif_family("Arial");
+        fontdb.set_cursive_family("Comic Sans MS");
+        fontdb.set_fantasy_family("Impact");
+        fontdb.set_monospace_family("Courier New");
+
+        // FIXME: FIXME FIXME: I'm not sure about the legality of the fonts
+        // being committed in the repo. Needs to be resolved ASAP.
+        fontdb.load_fonts_dir("./fonts/");
+
+        let svg_context: SvgContext = SvgContext{ fontdb: Arc::new(fontdb) };
         Self {
             markdown_layout,
             dirty: true,
             layout_ctx: LayoutContext::new(),
             max_advance: 0.0,
             scroll: Vec2::new(0.0, 0.0),
+            svg_context,
         }
     }
 }
@@ -1172,16 +1288,16 @@ impl Widget for MarkdowWidget {
         }
     }
 
-    fn register_children(&mut self, _ctx: &mut masonry::RegisterCtx) {}
+    fn register_children(&mut self, _ctx: &mut RegisterCtx) {}
 
-    fn compose(&mut self, ctx: &mut masonry::ComposeCtx) {
+    fn compose(&mut self, ctx: &mut masonry::core::ComposeCtx) {
         info!("compose called: size: {}, baseline_offset: {}, window_origin: {}, layout_rect: {}", ctx.size(), ctx.baseline_offset(), ctx.window_origin(), ctx.layout_rect());
     }
 
     fn layout(
         &mut self,
-        ctx: &mut masonry::LayoutCtx,
-        bc: &masonry::BoxConstraints,
+        ctx: &mut masonry::core::LayoutCtx,
+        bc: &masonry::core::BoxConstraints,
     ) -> kurbo::Size {
         debug!("cool layout");
         let size = bc.max();
@@ -1196,6 +1312,7 @@ impl Widget for MarkdowWidget {
                     size.width as f32,
                     theme,
                     i == 0,
+                    &self.svg_context,
                 );
             });
         }
@@ -1206,7 +1323,7 @@ impl Widget for MarkdowWidget {
         size
     }
 
-    fn paint(&mut self, ctx: &mut masonry::PaintCtx, scene: &mut vello::Scene) {
+    fn paint(&mut self, ctx: &mut masonry::core::PaintCtx, scene: &mut vello::Scene) {
         scene.push_layer(
             BlendMode::default(),
             1.,
@@ -1234,12 +1351,12 @@ impl Widget for MarkdowWidget {
 
     fn accessibility(
         &mut self,
-        _ctx: &mut masonry::AccessCtx,
+        _ctx: &mut masonry::core::AccessCtx,
         _node: &mut accesskit::Node,
     ) {
     }
 
-    fn children_ids(&self) -> SmallVec<[masonry::WidgetId; 16]> {
+    fn children_ids(&self) -> SmallVec<[masonry::core::WidgetId; 16]> {
         SmallVec::new()
     }
 }
@@ -1331,7 +1448,7 @@ where
         _app_state: &mut State,
     ) -> xilem::core::MessageResult<Action, Box<dyn Message>> {
         debug!("CodeView::message");
-        match message.downcast::<masonry::Action>() {
+        match message.downcast::<masonry::core::Action>() {
             Ok(action) => {
                 tracing::error!(
                     "Wrong action type in CodeView::message: {action:?}"

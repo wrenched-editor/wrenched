@@ -46,7 +46,7 @@ impl Theme {
             markdown_horizontal_line_height: 2.0,
             markdown_horizontal_line_vertical_margine: 10.0,
             markdown_horizontal_line_horizontal_margine: 10.0,
-            markdown_horizontal_line_color: Color::from_rgb8(0x4D,0x4D,0x4D),
+            markdown_horizontal_line_color: Color::from_rgb8(0x4D, 0x4D, 0x4D),
         }
     }
 }
