@@ -137,8 +137,8 @@ impl CodeTextLayout {
             text,
             theme.scale,
         );
-        builder.push_default(StyleProperty::Brush(theme.text_color.into()));
-        builder.push_default(StyleProperty::FontSize(theme.text_size as f32));
+        builder.push_default(StyleProperty::Brush(theme.text.text_color.into()));
+        builder.push_default(StyleProperty::FontSize(theme.text.text_size as f32));
         builder.push_default(StyleProperty::FontStack(self.font.clone()));
         builder.push_default(StyleProperty::FontWeight(FontWeight::NORMAL));
         builder.push_default(StyleProperty::FontStyle(FontStyle::Normal));

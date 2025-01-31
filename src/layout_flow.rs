@@ -4,36 +4,23 @@ use std::{
     slice::Iter,
 };
 
-use kurbo::Rect;
-
 #[derive(Clone, Debug)]
 pub struct LayoutElement<Data> {
     // TODO: Change to Rect which has all offset(x,y), height, and width.
-    pub offset: f32,
-    pub height: f32,
+    pub offset: f64,
+    pub height: f64,
     pub data: Data,
-}
-
-impl<Data> LayoutElement<Data> {
-    pub fn get_source_rect(&self, parent_source_rect: &Rect) -> Rect {
-        let x0 = 0.0;
-        let y0 = (parent_source_rect.y0 - self.offset as f64).max(0.0);
-        let x1 = 0.0;
-        let y1 = (parent_source_rect.y1 - self.offset as f64 + self.height as f64)
-            .min(self.height as f64);
-        Rect::new(x0, y0, x1, y1)
-    }
 }
 
 // TODO: Rename this thing...
 #[derive(Clone, Default, Debug)]
 pub struct LayoutFlow<Data> {
     pub(super) flow: Vec<LayoutElement<Data>>,
-    height: f32,
+    height: f64,
 }
 
 pub trait LayoutData {
-    fn height(&self) -> f32;
+    fn height(&self) -> f64;
 }
 
 pub struct MutableData<'a, Data: LayoutData> {
@@ -65,10 +52,11 @@ impl<Data> Drop for MutableData<'_, Data>
 where
     Data: LayoutData,
 {
+    // TODO: This should be well documented.
     fn drop(&mut self) {
         let new_height = self.layout_flow.flow[self.index].data.height();
         let height_diff = new_height - self.layout_flow.flow[self.index].height;
-        if height_diff.abs() > f32::EPSILON {
+        if height_diff.abs() > f64::EPSILON {
             self.layout_flow.recompute_from_index(self.index);
         }
     }
@@ -93,8 +81,8 @@ impl<Data: LayoutData> LayoutFlow<Data> {
     pub fn get_visible_parts(
         &self,
         // TODO: Change it to Rect
-        offset: f32,
-        height: f32,
+        offset: f64,
+        height: f64,
     ) -> &[LayoutElement<Data>] {
         let bottom = offset + height;
         if let Ok(index) = self.flow.binary_search_by(|v| {
@@ -154,7 +142,7 @@ impl<Data: LayoutData> LayoutFlow<Data> {
     }
 
     /// This return an element with correlated coordinates within the element
-    pub fn get_element_at_offset(&self, offset: f32) -> Option<(&Data, f32)> {
+    pub fn get_element_at_offset(&self, offset: f64) -> Option<(&Data, f64)> {
         let res = self
             .flow
             .binary_search_by(|v| {
@@ -176,7 +164,9 @@ impl<Data: LayoutData> LayoutFlow<Data> {
     }
 
     pub fn recopute_all(&mut self) {
-        self.recompute_from_index(0);
+        if !self.flow.is_empty() {
+            self.recompute_from_index(0);
+        }
     }
 
     /// This return an element with correlated coordinates within the element
@@ -208,7 +198,11 @@ impl<Data: LayoutData> LayoutFlow<Data> {
         self.flow.len()
     }
 
-    pub fn height(&self) -> f32 {
+    pub fn is_empty(&self) -> bool {
+        self.flow.is_empty()
+    }
+
+    pub fn height(&self) -> f64 {
         self.height
     }
 }
