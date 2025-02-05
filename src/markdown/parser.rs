@@ -1,6 +1,7 @@
 use parley::Layout;
 use pulldown_cmark::{
-    BrokenLinkCallback, Event, HeadingLevel, Options, Parser, Tag, TagEnd,
+    BlockQuoteKind, BrokenLinkCallback, Event, HeadingLevel, Options, Parser, Tag,
+    TagEnd,
 };
 use tracing::{error, warn};
 
@@ -199,10 +200,22 @@ fn process_events<'a, T: BrokenLinkCallback<'a>>(
                         events,
                         Some(Event::End(TagEnd::BlockQuote(*block_quote_kind))),
                     );
-                    // TODO: Set specific decoration.
+                    let decoration = match block_quote_kind {
+                        Some(BlockQuoteKind::Note) => IndentationDecoration::Note,
+                        Some(BlockQuoteKind::Tip) => IndentationDecoration::Tip,
+                        Some(BlockQuoteKind::Important) => {
+                            IndentationDecoration::Important
+                        }
+                        Some(BlockQuoteKind::Warning) => {
+                            IndentationDecoration::Warning
+                        }
+                        Some(BlockQuoteKind::Caution) => {
+                            IndentationDecoration::Caution
+                        }
+                        None => IndentationDecoration::Indentation,
+                    };
                     res.push(MarkdownContent::Indented(Indented::new(
-                        IndentationDecoration::Indentation,
-                        flow,
+                        decoration, flow,
                     )));
                 }
                 Tag::HtmlBlock => {
@@ -365,8 +378,8 @@ pub fn parse_markdown(text: &str) -> LayoutFlow<MarkdownContent> {
         //Options::ENABLE_TABLES
         //| Options::ENABLE_FOOTNOTES
         //| Options::ENABLE_STRIKETHROUGH
-        Options::ENABLE_STRIKETHROUGH, //| Options::ENABLE_TASKLISTS
-                                       //| Options::ENABLE_HEADING_ATTRIBUTES,
+        Options::ENABLE_STRIKETHROUGH //| Options::ENABLE_TASKLISTS
+        | Options::ENABLE_GFM, //| Options::ENABLE_HEADING_ATTRIBUTES,
     );
 
     process_events(&mut parser, None)

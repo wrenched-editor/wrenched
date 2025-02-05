@@ -24,6 +24,7 @@ use xilem::{
 };
 
 use crate::{layout_flow::LayoutFlow, scene_utils::SizedScene, theme::get_theme};
+
 pub struct MarkdowWidget {
     markdown_layout: LayoutFlow<MarkdownContent>,
     layout_ctx: LayoutContext<MarkdownBrush>,
@@ -57,6 +58,7 @@ impl MarkdowWidget {
         let svg_context: SvgContext = SvgContext {
             fontdb: Arc::new(fontdb),
         };
+
         Self {
             markdown_layout,
             dirty: true,
@@ -139,7 +141,8 @@ impl Widget for MarkdowWidget {
             Affine::IDENTITY,
             &ctx.size().to_rect(),
         );
-        let mut scene = SizedScene::new(scene, ctx.size());
+        let size = ctx.size();
+        let mut scene = SizedScene::new(scene, size);
         let theme = &get_theme();
         let (font_ctx, _layout_ctx) = ctx.text_contexts();
         let mut markdown_ctx: MarkdownContext = MarkdownContext {
@@ -152,6 +155,7 @@ impl Widget for MarkdowWidget {
             &mut scene,
             &mut markdown_ctx,
             &self.scroll,
+            &size,
             &self.markdown_layout,
         );
         scene.pop_layer();

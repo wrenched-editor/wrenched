@@ -13,6 +13,7 @@ masonry = { git = "https://github.com/linebender/xilem", rev = "d77b31b892cfc539
 accesskit = "^0.17.0"
 tracing = "0.1"
 parley = { git = "https://github.com/linebender/parley", rev = "16b62518d467487ee15cb230fdb28530d89a8cf6", features = ["accesskit"] }
+fontique = { git = "https://github.com/linebender/parley", rev = "16b62518d467487ee15cb230fdb28530d89a8cf6"}
 eyre = "0.6"
 smallvec = "1.13"
 color-backtrace = { version = "0.6", default-features = false }
@@ -20,7 +21,6 @@ tracing-subscriber = "0.3"
 peniko = "0.3"
 kurbo = "0.11"
 rand = "0.8.5"
-fontique = "0.2"
 pulldown-cmark = "0.12.2"
 image = "0.25"
 ureq = "3.0.0"

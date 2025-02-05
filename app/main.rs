@@ -32,6 +32,7 @@ use wrenched::{
     buffer::{Buffer, BufferView},
     code_widget::code_view,
     markdown::markdown_view,
+    utils::load_font_blobs_dir,
 };
 use xilem::{
     view::{button, checkbox, flex, textbox, Axis},
@@ -134,7 +135,12 @@ fn run(event_loop: EventLoopBuilder) -> eyre::Result<()> {
         buffer_view,
     };
 
-    let app = Xilem::new(data, app_logic);
+    let font_blobs = load_font_blobs_dir("fonts/nerd-fonts")?;
+    let mut app = Xilem::new(data, app_logic);
+    for font_blob in font_blobs.into_iter() {
+        app = app.with_font(font_blob);
+    }
+
     app.run_windowed(event_loop, "First Example".into())?;
     Ok(())
 }

@@ -2,11 +2,9 @@ use core::fmt;
 use std::{fs, ops::Range, path::Path, sync::Arc};
 
 use image;
-use kurbo::{Affine, Cap, Insets, Join, Line, Stroke, Vec2};
+use kurbo::{Affine, Cap, Insets, Join, Line, Rect, Size, Stroke, Vec2};
 use parley::{
-    Alignment, Cluster, Decoration, FontContext, FontStyle, GlyphRun, InlineBox,
-    Layout, LayoutContext, PositionedLayoutItem, RangedBuilder, RunMetrics,
-    StyleProperty,
+    Alignment, Cluster, Decoration, FontContext, FontFamily, FontStack, FontStyle, GlyphRun, InlineBox, Layout, LayoutContext, PositionedLayoutItem, RangedBuilder, RunMetrics, StyleProperty
 };
 use peniko::{Color, Fill, Image, ImageFormat};
 use pulldown_cmark::HeadingLevel;
@@ -16,7 +14,7 @@ use xilem::FontWeight;
 use crate::{
     layout_flow::{LayoutData, LayoutFlow},
     scene_utils::SizedScene,
-    theme::{get_theme, Theme},
+    theme::{get_theme, MarkdowTheme, Theme},
 };
 
 type Height = f64;
@@ -52,12 +50,14 @@ impl Margin {
 
     /// This function takes paint Rect and adjusts it with the margin. The
     /// adjusted rect is then given to the `f` function for painting.
-    fn paint<F>(&self, position: &Vec2, f: F)
+    fn paint<F>(&self, position: &Vec2, element_size: &Size, f: F)
     where
-        F: FnOnce(&Vec2),
+        F: FnOnce(&Vec2, &Size),
     {
         let new_position = *position + Vec2::new(self.insets.x0, self.insets.y0);
-        f(&new_position);
+        let new_size =
+            *element_size - Size::new(self.insets.x_value(), self.insets.y_value());
+        f(&new_position, &new_size);
     }
 
     /// This function takes paint Rect and adjusts it with the margin. The
@@ -168,6 +168,7 @@ impl MarkdownList {
         scene: &mut SizedScene,
         ctx: &mut MarkdownContext,
         position: &Vec2,
+        element_size: &Size,
         index: usize,
         flow: &LayoutFlow<MarkdownContent>,
     ) {
@@ -189,7 +190,8 @@ impl MarkdownList {
             }
         }
         let item_position = *position + Vec2::new(self.indentation, 0.0);
-        draw_flow(scene, ctx, &item_position, flow);
+        let item_size = *element_size - Size::new(self.indentation, 0.0);
+        draw_flow(scene, ctx, &item_position, &item_size, flow);
     }
 
     fn paint(
@@ -197,14 +199,23 @@ impl MarkdownList {
         scene: &mut SizedScene,
         ctx: &mut MarkdownContext,
         position: &Vec2,
+        element_size: &Size,
     ) {
-        self.margin.paint(position, |position| {
-            let mut position = *position;
-            for (index, flow) in self.list.iter().enumerate() {
-                self.paint_one_element(scene, ctx, &position, index, flow);
-                position.y += flow.height();
-            }
-        });
+        self.margin
+            .paint(position, element_size, |position, element_size| {
+                let mut position = *position;
+                for (index, flow) in self.list.iter().enumerate() {
+                    self.paint_one_element(
+                        scene,
+                        ctx,
+                        &position,
+                        element_size,
+                        index,
+                        flow,
+                    );
+                    position.y += flow.height();
+                }
+            });
     }
 }
 pub struct SvgContext {
@@ -262,16 +273,6 @@ enum ImageType {
     Rasterized(image::ImageFormat),
 }
 
-#[derive(Clone, Debug)]
-pub enum IndentationDecoration {
-    Indentation,
-    Note,
-    Info,
-    Important,
-    Tip,
-    Caution,
-}
-
 #[derive(Clone)]
 pub struct Link {
     url: String,
@@ -301,26 +302,18 @@ impl InlinedImage {
     }
 }
 
-// TODO: make all f32 to f64???
-
 #[derive(Clone)]
 pub struct MarkdownText {
     str: String,
     markers: Vec<TextMarker>,
     text_layout: Layout<MarkdownBrush>,
-    // TODO: Change to small vec
     inlined_images: Vec<InlinedImage>,
     links: Vec<Link>,
 }
 
 impl fmt::Debug for MarkdownText {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        #[derive(Debug)]
-        struct DbgMarkdownText<'a> {
-            str: &'a String,
-        }
-
-        fmt::Debug::fmt(&DbgMarkdownText { str: &self.str }, f)
+        write!(f, "MarkdownText {{ str: {} }}", self.str)
     }
 }
 
@@ -350,7 +343,6 @@ impl MarkdownText {
 
                 // This conditions most likely means it is a local file link.
                 let (raw_data, image_type) = if !inlined_image.url.contains("://") {
-                    // TODO: Process local SVG as well.
                     let path: &Path = inlined_image.url.as_ref();
                     let buf = fs::read(&inlined_image.url).unwrap();
                     let extension = path.extension().unwrap();
@@ -433,7 +425,6 @@ impl MarkdownText {
 
     fn pre_fill_builder<'a>(
         &'a self,
-        // TODO: Change to MarkdownContext
         font_ctx: &'a mut FontContext,
         layout_ctx: &'a mut LayoutContext<MarkdownBrush>,
     ) -> RangedBuilder<'a, MarkdownBrush> {
@@ -469,20 +460,12 @@ impl MarkdownText {
             HeadingLevel::H5 => ctx.theme.text.text_size as f32 * 1.125,
             HeadingLevel::H6 => ctx.theme.text.text_size as f32,
         };
-        let line_height = match level {
-            // TODO: Experiment with line height to get better results???
-            HeadingLevel::H1 => 2.0,
-            HeadingLevel::H2 => 2.0,
-            HeadingLevel::H3 => 2.0,
-            HeadingLevel::H4 => 2.0,
-            HeadingLevel::H5 => 2.0,
-            HeadingLevel::H6 => 2.0,
-        };
         builder.push_default(StyleProperty::FontSize(font_size));
-        builder.push_default(StyleProperty::LineHeight(line_height));
+        builder.push_default(StyleProperty::LineHeight(
+            ctx.theme.markdown.header_line_height,
+        ));
         builder.push_default(StyleProperty::FontWeight(FontWeight::BOLD));
         let mut layout = builder.build(&self.str);
-        // TODO: Change it to header other margine based on the header leave.
         layout.break_all_lines(Some(width as f32));
         self.text_layout = layout;
     }
@@ -559,10 +542,12 @@ impl Paragraph {
         scene: &mut SizedScene,
         _ctx: &mut MarkdownContext,
         position: &Vec2,
+        element_size: &Size,
     ) {
-        self.margin.paint(position, |position| {
-            self.text.draw_text(scene, position);
-        });
+        self.margin
+            .paint(position, element_size, |position, _element_size| {
+                self.text.draw_text(scene, position);
+            });
     }
 }
 
@@ -570,7 +555,8 @@ impl Paragraph {
 pub struct CodeBlock {
     text: MarkdownText,
     margin: Margin,
-    language: Option<String>,
+    // TODO: Use the language to do some syntax highlighting
+    _language: Option<String>,
 }
 
 impl CodeBlock {
@@ -578,7 +564,7 @@ impl CodeBlock {
         CodeBlock {
             text: MarkdownText::new(str, Vec::new(), Vec::new(), Vec::new()),
             margin: Margin::ZERO,
-            language,
+            _language: language,
         }
     }
 
@@ -600,18 +586,214 @@ impl CodeBlock {
         scene: &mut SizedScene,
         _ctx: &mut MarkdownContext,
         position: &Vec2,
+        element_size: &Size,
     ) {
-        self.margin.paint(position, |position| {
-            self.text.draw_text(scene, position);
-        });
+        self.margin
+            .paint(position, element_size, |position, _element_size| {
+                self.text.draw_text(scene, position);
+            });
     }
 }
 
 #[derive(Clone, Debug)]
+pub enum IndentationDecoration {
+    Indentation,
+    Note,
+    Important,
+    Tip,
+    Warning,
+    Caution,
+}
+
+impl IndentationDecoration {
+    fn padding_and_symbol(
+        &self,
+        ctx: &mut MarkdownContext,
+    ) -> (Margin, Layout<MarkdownBrush>) {
+        let theme = &ctx.theme.markdown;
+        let left = match self {
+            IndentationDecoration::Indentation => {
+                theme.indentation_line_width + theme.indentation_line_margine * 2.0
+            }
+            _ => theme.indentation_box_margin + theme.indentation_box_line_width,
+        };
+        let top = match self {
+            IndentationDecoration::Indentation => 0.0,
+            _ => theme.indentation_box_margin + theme.indentation_box_line_width,
+        };
+        let right = match self {
+            IndentationDecoration::Indentation => 0.0,
+            _ => theme.indentation_box_margin + theme.indentation_box_line_width,
+        };
+        let bottom = match self {
+            IndentationDecoration::Indentation => 0.0,
+            _ => theme.indentation_box_margin + theme.indentation_box_line_width,
+        };
+
+        let symbol = match self {
+            IndentationDecoration::Indentation => "".to_string(),
+            IndentationDecoration::Note => theme.indentation_note_sign.clone(),
+            IndentationDecoration::Important => {
+                theme.indentation_important_sign.clone()
+            }
+            IndentationDecoration::Tip => theme.indentation_tip_sign.clone(),
+            IndentationDecoration::Warning => theme.indentation_warning_sign.clone(),
+            IndentationDecoration::Caution => theme.indentation_caution_sign.clone(),
+        };
+
+        let color = self.color(theme);
+
+        let layout = if symbol.is_empty() {
+            Layout::new()
+        } else {
+            let mut builder =
+                str_to_builder(&symbol, &[], ctx.font_ctx, ctx.layout_ctx);
+            builder.push_default(StyleProperty::FontStack(FontStack::Single(FontFamily::Named("FiraCode Nerd Font".into()))));
+            builder.push_default(StyleProperty::Brush(MarkdownBrush(color)));
+            let mut layout = builder.build(&symbol);
+            layout.break_all_lines(None);
+            layout
+        };
+
+        let additional_left_padding = if symbol.is_empty() {
+            0.0
+        } else {
+            // TODO: This should be themeable???
+            layout.full_width() as f64 + (theme.indentation_sign_horizontal_padding * 2.0)
+        };
+
+        (
+            Margin::new(left + additional_left_padding, top, right, bottom),
+            layout,
+        )
+    }
+
+    fn color(&self, theme: &MarkdowTheme) -> Color {
+        match self {
+            IndentationDecoration::Indentation => theme.indentation_color,
+            IndentationDecoration::Note => theme.indentation_note_color,
+            IndentationDecoration::Important => theme.indentation_important_color,
+            IndentationDecoration::Tip => theme.indentation_tip_color,
+            IndentationDecoration::Warning => theme.indentation_warning_color,
+            IndentationDecoration::Caution => theme.indentation_caution_color,
+        }
+    }
+
+    fn paint(
+        &self,
+        scene: &mut SizedScene,
+        ctx: &mut MarkdownContext,
+        position: &Vec2,
+        element_size: &Size,
+        symbol_layout: &Layout<MarkdownBrush>,
+        padding: &Margin,
+    ) {
+        let theme = &ctx.theme.markdown;
+        let color = self.color(&ctx.theme.markdown);
+        match self {
+            IndentationDecoration::Indentation => {
+                let x0 = theme.indentation_line_margine
+                    + theme.indentation_line_width / 2.0;
+                let y1 = 0.0;
+                let y2 = element_size.height;
+                let underline_shape = Line::new((x0, y1), (x0, y2));
+
+                let stroke = Stroke {
+                    width: theme.indentation_line_width,
+                    join: Join::Bevel,
+                    miter_limit: 4.0,
+                    start_cap: Cap::Round,
+                    end_cap: Cap::Round,
+                    dash_pattern: Default::default(),
+                    dash_offset: 0.0,
+                };
+
+                let transform = Affine::translate(*position);
+
+                scene.stroke(
+                    &stroke,
+                    transform,
+                    color,
+                    Some(Affine::IDENTITY),
+                    &underline_shape,
+                );
+            }
+            _ => {
+                let margin = theme.indentation_box_margin;
+                let half_margin = margin / 2.0;
+                let x0 = half_margin + (theme.indentation_line_width / 2.0);
+                let y0 = half_margin;
+                let x1 = element_size.width - half_margin;
+                let y1 = element_size.height - half_margin;
+                let box_shape = Rect::new(x0, y0, x1, y1);
+
+                let stroke = Stroke {
+                    width: theme.indentation_box_line_width,
+                    join: Join::Bevel,
+                    miter_limit: 4.0,
+                    start_cap: Cap::Round,
+                    end_cap: Cap::Round,
+                    dash_pattern: Default::default(),
+                    dash_offset: 0.0,
+                };
+
+                let transform = Affine::translate(*position);
+
+                scene.stroke(
+                    &stroke,
+                    transform,
+                    color,
+                    Some(Affine::IDENTITY),
+                    &box_shape,
+                );
+
+                let x1 = padding.insets.x0 - (theme.indentation_box_line_width * 2.0);
+                let box_shape = Rect::new(x0, y0, x1, y1);
+
+                let stroke = Stroke {
+                    width: ctx.theme.markdown.indentation_box_line_width,
+                    join: Join::Bevel,
+                    miter_limit: 4.0,
+                    start_cap: Cap::Round,
+                    end_cap: Cap::Round,
+                    dash_pattern: Default::default(),
+                    dash_offset: 0.0,
+                };
+
+                scene.stroke(
+                    &stroke,
+                    transform,
+                    color,
+                    Some(Affine::IDENTITY),
+                    &box_shape,
+                );
+
+                let x= (padding.insets.x0 - symbol_layout.full_width() as f64 - theme.indentation_box_line_width) / 2.0;
+                let y = padding.insets.y0; //theme.indentation_sign_top_padding;
+
+                draw_text(symbol_layout, scene, &(*position + Vec2::new(x, y)), &[]);
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct Indented {
     margin: Margin,
+    padding: Margin,
     decoration: IndentationDecoration,
     flow: LayoutFlow<MarkdownContent>,
+    symbol_layout: Layout<MarkdownBrush>,
+}
+
+impl std::fmt::Debug for Indented {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Margin")
+            .field("margin", &self.margin)
+            .field("padding", &self.padding)
+            .field("flow", &self.flow)
+            .finish()
+    }
 }
 
 impl Indented {
@@ -623,22 +805,33 @@ impl Indented {
             decoration,
             flow,
             margin: Margin::ZERO,
+            padding: Margin::ZERO,
+            symbol_layout: Layout::new(),
         }
     }
 
     fn layout(&mut self, ctx: &mut MarkdownContext, width: Width) -> Height {
-        self.margin.insets.x0 = ctx.theme.markdown.indentation_decoration_width;
+        self.margin.insets.x0 = ctx.theme.markdown.indentation_horizonatl_margin;
+        self.margin.insets.x1 = ctx.theme.markdown.indentation_horizonatl_margin;
+        self.margin.insets.y0 = ctx.theme.markdown.indentation_vertical_margin;
+        self.margin.insets.y1 = ctx.theme.markdown.indentation_vertical_margin;
+
+        let (padding, layout) = self.decoration.padding_and_symbol(ctx);
+        self.padding = padding;
+        self.symbol_layout = layout;
 
         self.margin.layout_by_width(width, |width| {
             self.flow.apply_to_all(|(i, data)| {
-                data.layout(ctx, width, i == 0);
+                self.padding
+                    .layout_by_width(width, |width| data.layout(ctx, width, i == 0));
             });
             self.flow.height()
         })
     }
 
     fn height(&self) -> Height {
-        self.margin.height(|| self.flow.height())
+        self.margin
+            .height(|| self.padding.height(|| self.flow.height()))
     }
 
     fn paint(
@@ -646,10 +839,19 @@ impl Indented {
         scene: &mut SizedScene,
         ctx: &mut MarkdownContext,
         position: &Vec2,
+        element_size: &Size,
     ) {
-        self.margin.paint(position, |position| {
-            draw_flow(scene, ctx, position, &self.flow);
-        });
+        self.margin
+            .paint(position, element_size, |position, element_size| {
+                self.decoration.paint(scene, ctx, position, element_size, &self.symbol_layout, &self.padding);
+                self.padding.paint(
+                    position,
+                    element_size,
+                    |position, element_size| {
+                        draw_flow(scene, ctx, position, element_size, &self.flow);
+                    },
+                )
+            });
     }
 }
 
@@ -695,17 +897,18 @@ impl Header {
         scene: &mut SizedScene,
         _ctx: &mut MarkdownContext,
         position: &Vec2,
+        element_size: &Size,
     ) {
-        self.margin.paint(position, |position| {
-            self.text.draw_text(scene, position);
-        });
+        self.margin
+            .paint(position, element_size, |position, _element_size| {
+                self.text.draw_text(scene, position);
+            });
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct HorizontalLine {
     height: f64,
-    width: f64,
     margin: Margin,
 }
 
@@ -714,7 +917,6 @@ impl HorizontalLine {
         HorizontalLine {
             margin: Margin::ZERO,
             height: 0.0,
-            width: 0.0,
         }
     }
 
@@ -735,10 +937,7 @@ impl HorizontalLine {
             ctx.theme.markdown.horizontal_line_vertical_margin,
         );
         self.height = ctx.theme.markdown.horizontal_line_height;
-        self.margin.layout_by_width(width, |width| {
-            self.width = width;
-            self.height
-        })
+        self.margin.layout_by_width(width, |_width| self.height)
     }
 
     fn height(&self) -> Height {
@@ -750,33 +949,35 @@ impl HorizontalLine {
         scene: &mut SizedScene,
         ctx: &mut MarkdownContext,
         position: &Vec2,
+        element_size: &Size,
     ) {
-        self.margin.paint(position, |position| {
-            let y1 = ctx.theme.markdown.horizontal_line_height / 2.0;
-            let x1 = 0.0;
-            let x2 = self.width;
-            let underline_shape = Line::new((x1, y1), (x2, y1));
+        self.margin
+            .paint(position, element_size, |position, _element_size| {
+                let y1 = ctx.theme.markdown.horizontal_line_height / 2.0;
+                let x1 = 0.0;
+                let x2 = element_size.width;
+                let underline_shape = Line::new((x1, y1), (x2, y1));
 
-            let stroke = Stroke {
-                width: ctx.theme.markdown.horizontal_line_height,
-                join: Join::Bevel,
-                miter_limit: 4.0,
-                start_cap: Cap::Round,
-                end_cap: Cap::Round,
-                dash_pattern: Default::default(),
-                dash_offset: 0.0,
-            };
+                let stroke = Stroke {
+                    width: ctx.theme.markdown.horizontal_line_height,
+                    join: Join::Bevel,
+                    miter_limit: 4.0,
+                    start_cap: Cap::Round,
+                    end_cap: Cap::Round,
+                    dash_pattern: Default::default(),
+                    dash_offset: 0.0,
+                };
 
-            let transform = Affine::translate(*position);
+                let transform = Affine::translate(*position);
 
-            scene.stroke(
-                &stroke,
-                transform,
-                ctx.theme.markdown.horizontal_line_color,
-                Some(Affine::IDENTITY),
-                &underline_shape,
-            );
-        });
+                scene.stroke(
+                    &stroke,
+                    transform,
+                    ctx.theme.markdown.horizontal_line_color,
+                    Some(Affine::IDENTITY),
+                    &underline_shape,
+                );
+            });
     }
 }
 
@@ -821,33 +1022,33 @@ impl MarkdownContent {
         }
     }
 
-    // TODO: Unify paint and draw call names.
     pub fn paint(
         &self,
         scene: &mut SizedScene,
         ctx: &mut MarkdownContext,
         position: &Vec2,
+        element_size: &Size,
     ) {
         // TODO: Draw indentation decoration
         match self {
             MarkdownContent::Paragraph(paragraph) => {
-                paragraph.paint(scene, ctx, position);
+                paragraph.paint(scene, ctx, position, element_size);
             }
             // TODO: Add support for solo image
             MarkdownContent::CodeBlock(code_block) => {
-                code_block.paint(scene, ctx, position);
+                code_block.paint(scene, ctx, position, element_size);
             }
             MarkdownContent::Indented(indented) => {
-                indented.paint(scene, ctx, position);
+                indented.paint(scene, ctx, position, element_size);
             }
             MarkdownContent::List(list) => {
-                list.paint(scene, ctx, position);
+                list.paint(scene, ctx, position, element_size);
             }
             MarkdownContent::HorizontalLine(horizontal_line) => {
-                horizontal_line.paint(scene, ctx, position);
+                horizontal_line.paint(scene, ctx, position, element_size);
             }
             MarkdownContent::Header(header) => {
-                header.paint(scene, ctx, position);
+                header.paint(scene, ctx, position, element_size);
             }
         }
     }
@@ -1007,7 +1208,7 @@ impl TextMarker {
                 builder.push(StyleProperty::Strikethrough(true), rang)
             }
             MarkerKind::InlineCode => {
-                // TODO: Draw additinal decorations??? Maybe into the brush???
+                // TODO: Draw additional decorations??? Maybe into the brush???
                 builder.push(
                     StyleProperty::FontStack(
                         theme.text.monospace_font_stack.clone(),
@@ -1067,6 +1268,7 @@ pub fn draw_flow(
     scene: &mut SizedScene,
     ctx: &mut MarkdownContext,
     position: &Vec2,
+    element_size: &Size,
     flow: &LayoutFlow<MarkdownContent>,
 ) {
     let offset = if position.y < 0.0 { -position.y } else { 0.0 };
@@ -1079,7 +1281,10 @@ pub fn draw_flow(
 
     for visible_part in visible_parts.iter() {
         let part_position = *position + Vec2::new(0.0, visible_part.offset);
-        visible_part.data.paint(scene, ctx, &part_position);
+        let part_size = Size::new(element_size.width, visible_part.height);
+        visible_part
+            .data
+            .paint(scene, ctx, &part_position, &part_size);
     }
 }
 
