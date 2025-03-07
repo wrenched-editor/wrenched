@@ -6,18 +6,22 @@ use std::{
     sync::Arc,
 };
 
-use accesskit::Role;
+use accesskit::{Node, Role};
 use elements::{
     draw_flow, MarkdownBrush, MarkdownContent, MarkdownContext, SvgContext,
 };
 use kurbo::{Affine, Vec2};
-use masonry::core::{EventCtx, PointerEvent, RegisterCtx, Widget};
+use masonry::core::{
+    AccessCtx, EventCtx, PaintCtx, PointerEvent, PropertiesMut, PropertiesRef,
+    RegisterCtx, Widget,
+};
 use parley::LayoutContext;
 use parser::parse_markdown;
 use peniko::BlendMode;
 use smallvec::SmallVec;
 use tracing::{debug, info};
 use usvg::fontdb;
+use vello::Scene;
 use xilem::{
     core::{Message, MessageResult, View, ViewMarker},
     Pod, ViewCtx,
@@ -70,7 +74,12 @@ impl MarkdowWidget {
     }
 }
 impl Widget for MarkdowWidget {
-    fn on_pointer_event(&mut self, ctx: &mut EventCtx, event: &PointerEvent) {
+    fn on_pointer_event(
+        &mut self,
+        ctx: &mut EventCtx,
+        _props: &mut PropertiesMut<'_>,
+        event: &PointerEvent,
+    ) {
         info!("event: {event:?} >>> ctx: {}", ctx.size());
         if let PointerEvent::MouseWheel(delta, _) = event {
             const SCROLLING_SPEED: f64 = 3.0;
@@ -98,12 +107,13 @@ impl Widget for MarkdowWidget {
     fn register_children(&mut self, _ctx: &mut RegisterCtx) {}
 
     fn compose(&mut self, ctx: &mut masonry::core::ComposeCtx) {
-        info!("compose called: size: {}, baseline_offset: {}, window_origin: {}, layout_rect: {}", ctx.size(), ctx.baseline_offset(), ctx.window_origin(), ctx.layout_rect());
+        info!("compose called: size: {}, baseline_offset: {}, window_origin: {}, layout_rect: {}", ctx.size(), ctx.baseline_offset(), ctx.window_origin(), ctx.bounding_rect());
     }
 
     fn layout(
         &mut self,
         ctx: &mut masonry::core::LayoutCtx,
+        _props: &mut PropertiesMut<'_>,
         bc: &masonry::core::BoxConstraints,
     ) -> kurbo::Size {
         debug!("cool layout");
@@ -132,8 +142,9 @@ impl Widget for MarkdowWidget {
 
     fn paint(
         &mut self,
-        ctx: &mut masonry::core::PaintCtx,
-        scene: &mut vello::Scene,
+        ctx: &mut PaintCtx,
+        _props: &PropertiesRef<'_>,
+        scene: &mut Scene,
     ) {
         scene.push_layer(
             BlendMode::default(),
@@ -167,8 +178,9 @@ impl Widget for MarkdowWidget {
 
     fn accessibility(
         &mut self,
-        _ctx: &mut masonry::core::AccessCtx,
-        _node: &mut accesskit::Node,
+        _ctx: &mut AccessCtx,
+        _props: &PropertiesRef<'_>,
+        _node: &mut Node,
     ) {
     }
 

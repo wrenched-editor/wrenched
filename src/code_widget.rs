@@ -7,8 +7,8 @@ use accesskit::{Node, Role};
 use kurbo::{Point, Size, Vec2};
 use masonry::core::{
     AccessCtx, AccessEvent, BoxConstraints, ComposeCtx, EventCtx, LayoutCtx,
-    PaintCtx, PointerEvent, QueryCtx, RegisterCtx, TextEvent, Update, UpdateCtx,
-    Widget, WidgetId,
+    PaintCtx, PointerEvent, PropertiesMut, PropertiesRef, QueryCtx, RegisterCtx,
+    TextEvent, Update, UpdateCtx, Widget, WidgetId,
 };
 use parley::StyleProperty;
 use smallvec::SmallVec;
@@ -64,7 +64,12 @@ impl CodeWidget {
 
 // --- MARK: IMPL WIDGET ---
 impl Widget for CodeWidget {
-    fn on_pointer_event(&mut self, ctx: &mut EventCtx, event: &PointerEvent) {
+    fn on_pointer_event(
+        &mut self,
+        ctx: &mut EventCtx,
+        _props: &mut PropertiesMut<'_>,
+        event: &PointerEvent,
+    ) {
         debug!("CodeWidget::on_pointer_event: {event:?}");
         if let PointerEvent::PointerDown(PointerButton::Primary, pointer_state) =
             event
@@ -89,7 +94,12 @@ impl Widget for CodeWidget {
         }
     }
 
-    fn on_text_event(&mut self, ctx: &mut EventCtx, event: &TextEvent) {
+    fn on_text_event(
+        &mut self,
+        ctx: &mut EventCtx,
+        _props: &mut PropertiesMut<'_>,
+        event: &TextEvent,
+    ) {
         debug!("CodeWidget::on_text_event: {event:?}");
         macro_rules! process_key {
             ($action:ident) => {
@@ -184,7 +194,12 @@ impl Widget for CodeWidget {
         }
     }
 
-    fn on_access_event(&mut self, _ctx: &mut EventCtx, event: &AccessEvent) {
+    fn on_access_event(
+        &mut self,
+        _ctx: &mut EventCtx,
+        _props: &mut PropertiesMut<'_>,
+        event: &AccessEvent,
+    ) {
         debug!("CodeWidget::on_access_event: {event:?}");
     }
 
@@ -194,11 +209,21 @@ impl Widget for CodeWidget {
         // And possilby line count gutter???
     }
 
-    fn update(&mut self, _ctx: &mut UpdateCtx, event: &Update) {
+    fn update(
+        &mut self,
+        _ctx: &mut UpdateCtx,
+        _props: &mut PropertiesMut<'_>,
+        event: &Update,
+    ) {
         debug!("CodeWidget::update: {event:?}");
     }
 
-    fn layout(&mut self, _ctx: &mut LayoutCtx, bc: &BoxConstraints) -> Size {
+    fn layout(
+        &mut self,
+        _ctx: &mut LayoutCtx,
+        _props: &mut PropertiesMut<'_>,
+        bc: &BoxConstraints,
+    ) -> Size {
         let text: String = self
             .buffer_view
             .lock()
@@ -256,7 +281,12 @@ impl Widget for CodeWidget {
         size
     }
 
-    fn paint(&mut self, ctx: &mut PaintCtx, scene: &mut Scene) {
+    fn paint(
+        &mut self,
+        ctx: &mut PaintCtx,
+        _props: &PropertiesRef<'_>,
+        scene: &mut Scene,
+    ) {
         debug!("CodeWidget::paint");
         let position = {
             let buffer_view = self.buffer_view().lock().unwrap();
@@ -278,7 +308,12 @@ impl Widget for CodeWidget {
         Some("CodeWidget".into())
     }
 
-    fn on_anim_frame(&mut self, _ctx: &mut UpdateCtx, interval: u64) {
+    fn on_anim_frame(
+        &mut self,
+        _ctx: &mut UpdateCtx,
+        _props: &mut PropertiesMut<'_>,
+        interval: u64,
+    ) {
         debug!("CodeWidget::on_anim_frame interval: {interval}");
     }
 
@@ -306,7 +341,12 @@ impl Widget for CodeWidget {
         Role::TextInput
     }
 
-    fn accessibility(&mut self, _ctx: &mut AccessCtx, _node: &mut Node) {
+    fn accessibility(
+        &mut self,
+        _ctx: &mut AccessCtx,
+        _props: &PropertiesRef<'_>,
+        _node: &mut Node,
+    ) {
         debug!("CodeWidget::accessibility");
     }
 }

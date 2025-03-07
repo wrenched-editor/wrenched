@@ -4,7 +4,9 @@ use std::{fs, ops::Range, path::Path, sync::Arc};
 use image;
 use kurbo::{Affine, Cap, Insets, Join, Line, Rect, Size, Stroke, Vec2};
 use parley::{
-    Alignment, Cluster, Decoration, FontContext, FontFamily, FontStack, FontStyle, GlyphRun, InlineBox, Layout, LayoutContext, PositionedLayoutItem, RangedBuilder, RunMetrics, StyleProperty
+    Alignment, Cluster, Decoration, FontContext, FontFamily, FontStack, FontStyle,
+    GlyphRun, InlineBox, Layout, LayoutContext, PositionedLayoutItem, RangedBuilder,
+    RunMetrics, StyleProperty,
 };
 use peniko::{Color, Fill, Image, ImageFormat};
 use pulldown_cmark::HeadingLevel;
@@ -124,7 +126,7 @@ impl MarkdownList {
                         str_to_builder(&str, &[], ctx.font_ctx, ctx.layout_ctx);
                     let mut marker_layout = builder.build(&str);
                     marker_layout.break_all_lines(None);
-                    marker_layout.align(None, Alignment::End);
+                    marker_layout.align(None, Alignment::End, false);
                     let marker_width = marker_layout.full_width() as f64
                         + ctx.theme.markdown.numbered_list_indentation
                         + ctx.theme.markdown.list_after_indentation;
@@ -648,7 +650,9 @@ impl IndentationDecoration {
         } else {
             let mut builder =
                 str_to_builder(&symbol, &[], ctx.font_ctx, ctx.layout_ctx);
-            builder.push_default(StyleProperty::FontStack(FontStack::Single(FontFamily::Named("FiraCode Nerd Font".into()))));
+            builder.push_default(StyleProperty::FontStack(FontStack::Single(
+                FontFamily::Named("FiraCode Nerd Font".into()),
+            )));
             builder.push_default(StyleProperty::Brush(MarkdownBrush(color)));
             let mut layout = builder.build(&symbol);
             layout.break_all_lines(None);
@@ -659,7 +663,8 @@ impl IndentationDecoration {
             0.0
         } else {
             // TODO: This should be themeable???
-            layout.full_width() as f64 + (theme.indentation_sign_horizontal_padding * 2.0)
+            layout.full_width() as f64
+                + (theme.indentation_sign_horizontal_padding * 2.0)
         };
 
         (
@@ -747,7 +752,8 @@ impl IndentationDecoration {
                     &box_shape,
                 );
 
-                let x1 = padding.insets.x0 - (theme.indentation_box_line_width * 2.0);
+                let x1 =
+                    padding.insets.x0 - (theme.indentation_box_line_width * 2.0);
                 let box_shape = Rect::new(x0, y0, x1, y1);
 
                 let stroke = Stroke {
@@ -768,7 +774,10 @@ impl IndentationDecoration {
                     &box_shape,
                 );
 
-                let x= (padding.insets.x0 - symbol_layout.full_width() as f64 - theme.indentation_box_line_width) / 2.0;
+                let x = (padding.insets.x0
+                    - symbol_layout.full_width() as f64
+                    - theme.indentation_box_line_width)
+                    / 2.0;
                 let y = padding.insets.y0; //theme.indentation_sign_top_padding;
 
                 draw_text(symbol_layout, scene, &(*position + Vec2::new(x, y)), &[]);
@@ -843,7 +852,14 @@ impl Indented {
     ) {
         self.margin
             .paint(position, element_size, |position, element_size| {
-                self.decoration.paint(scene, ctx, position, element_size, &self.symbol_layout, &self.padding);
+                self.decoration.paint(
+                    scene,
+                    ctx,
+                    position,
+                    element_size,
+                    &self.symbol_layout,
+                    &self.padding,
+                );
                 self.padding.paint(
                     position,
                     element_size,
