@@ -3,6 +3,8 @@ use std::sync::{LazyLock, RwLock, RwLockReadGuard};
 use parley::{FontFamily, FontStack, GenericFamily};
 use vello::peniko::Color;
 
+use crate::generation::Generation;
+
 static THEME: LazyLock<RwLock<Theme>> = LazyLock::new(|| RwLock::new(Theme::new()));
 
 #[derive(Debug, Clone)]
@@ -10,14 +12,19 @@ pub struct Theme {
     pub scale: f32,
     pub text: TextTheme,
     pub markdown: MarkdowTheme,
+    pub generation: Generation,
 }
 
 impl Theme {
     fn new() -> Theme {
+        // Create first generation
+        let mut generation = Generation::default();
+        generation.nudge();
         Theme {
             scale: 1.0,
             text: TextTheme::new(),
             markdown: MarkdowTheme::new(),
+            generation,
         }
     }
 }

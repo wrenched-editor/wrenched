@@ -1,18 +1,44 @@
-use parley::Layout;
 use pulldown_cmark::{
     BlockQuoteKind, BrokenLinkCallback, Event, HeadingLevel, Options, Parser, Tag,
     TagEnd,
 };
 use tracing::{error, warn};
 
-use super::elements::{MarkdownContent, MarkerKind, MarkerState, TextMarker};
+use super::{elements::MarkdownContent, text::styles::{MarkerKind, TextMarker}};
 use crate::{
     layout_flow::LayoutFlow,
-    markdown::elements::{
-        CodeBlock, Header, HorizontalLine, IndentationDecoration, Indented,
-        InlinedImage, ListMarker, MarkdownList, MarkdownText, Paragraph,
+    markdown::{
+        elements::{
+            CodeBlock, Header, HorizontalLine, IndentationDecoration, Indented,
+            ListMarker, MarkdownList, Paragraph,
+        },
+        text::{InlinedImage, MarkdownText},
     },
 };
+
+pub struct MarkerState {
+    pub bold_start: usize,
+    pub italic_start: usize,
+    pub strikethrough_start: usize,
+    pub markers: Vec<TextMarker>,
+}
+
+impl MarkerState {
+    pub fn new() -> Self {
+        Self {
+            bold_start: 0,
+            italic_start: 0,
+            strikethrough_start: 0,
+            markers: Vec::new(),
+        }
+    }
+}
+
+impl Default for MarkerState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 fn process_marker(
     event: &Event,
@@ -247,8 +273,7 @@ fn process_events<'a, T: BrokenLinkCallback<'a>>(
                         }
                     } else {
                         ListMarker::Symbol {
-                            symbol: "•".to_string(),
-                            layout: Box::new(Layout::new()),
+                            symbol: "•".to_string().into(),
                         }
                     };
                     res.push(MarkdownContent::List(MarkdownList::new(list, marker)));

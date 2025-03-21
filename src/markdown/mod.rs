@@ -1,24 +1,24 @@
+pub mod context;
 pub mod elements;
 pub mod parser;
+pub mod text;
 
 use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+    path::{Path, PathBuf}, sync::Arc}
+;
 
 use accesskit::{Node, Role};
-use elements::{
-    draw_flow, MarkdownBrush, MarkdownContent, MarkdownContext, SvgContext,
-};
+use context::{MarkdownContext, SvgContext, LayoutContext};
+use elements::{draw_flow, MarkdownContent};
 use kurbo::{Affine, Vec2};
 use masonry::core::{
-    AccessCtx, EventCtx, PaintCtx, PointerEvent, PropertiesMut, PropertiesRef,
-    RegisterCtx, Widget,
+    AccessCtx, EventCtx, PaintCtx, PointerEvent, PropertiesMut,
+    PropertiesRef, RegisterCtx, Widget,
 };
-use parley::LayoutContext;
 use parser::parse_markdown;
 use peniko::BlendMode;
 use smallvec::SmallVec;
+use text::styles::BrushPalete;
 use tracing::{debug, info};
 use usvg::fontdb;
 use vello::Scene;
@@ -27,15 +27,15 @@ use xilem::{
     Pod, ViewCtx,
 };
 
-use crate::{layout_flow::LayoutFlow, scene_utils::SizedScene, theme::get_theme};
+use crate::{layout_flow::LayoutFlow, theme::get_theme};
 
 pub struct MarkdowWidget {
     markdown_layout: LayoutFlow<MarkdownContent>,
-    layout_ctx: LayoutContext<MarkdownBrush>,
     max_advance: f64,
     dirty: bool,
     scroll: Vec2,
-    svg_context: SvgContext,
+    fontdb: Arc<fontdb::Database>,
+    brush_palete: BrushPalete,
 }
 
 impl MarkdowWidget {
@@ -59,17 +59,18 @@ impl MarkdowWidget {
         // being committed in the repo. Needs to be resolved ASAP.
         fontdb.load_fonts_dir("./fonts/");
 
-        let svg_context: SvgContext = SvgContext {
-            fontdb: Arc::new(fontdb),
-        };
+        let fontdb = Arc::new(fontdb);
+
+        let theme = get_theme();
+        let brush_palete: BrushPalete = BrushPalete::new(&theme);
 
         Self {
             markdown_layout,
             dirty: true,
-            layout_ctx: LayoutContext::new(),
             max_advance: 0.0,
             scroll: Vec2::new(0.0, 0.0),
-            svg_context,
+            fontdb,
+            brush_palete,
         }
     }
 }
@@ -116,15 +117,15 @@ impl Widget for MarkdowWidget {
         _props: &mut PropertiesMut<'_>,
         bc: &masonry::core::BoxConstraints,
     ) -> kurbo::Size {
-        debug!("cool layout");
         let size = bc.max();
         let theme = &get_theme();
 
-        let (font_ctx, _layout_ctx) = ctx.text_contexts();
+        let (font_ctx, layout_ctx) = ctx.text_contexts();
+        let svg_ctx = SvgContext::new(self.fontdb.clone());
+        let mut layout_ctx: LayoutContext<'_> = LayoutContext::new(font_ctx, layout_ctx);
         let mut markdown_ctx: MarkdownContext = MarkdownContext {
-            svg_ctx: &mut self.svg_context,
-            font_ctx,
-            layout_ctx: &mut self.layout_ctx,
+            svg_ctx: &svg_ctx,
+            layout_ctx: &mut layout_ctx,
             theme,
         };
 
@@ -153,21 +154,23 @@ impl Widget for MarkdowWidget {
             &ctx.size().to_rect(),
         );
         let size = ctx.size();
-        let mut scene = SizedScene::new(scene, size);
         let theme = &get_theme();
-        let (font_ctx, _layout_ctx) = ctx.text_contexts();
+        let (font_ctx, layout_ctx) = ctx.text_contexts();
+        let svg_ctx = SvgContext::new(self.fontdb.clone());
+        let mut layout_ctx: LayoutContext<'_> = LayoutContext::new(font_ctx, layout_ctx);
         let mut markdown_ctx: MarkdownContext = MarkdownContext {
-            svg_ctx: &mut self.svg_context,
-            font_ctx,
-            layout_ctx: &mut self.layout_ctx,
+            svg_ctx: &svg_ctx,
             theme,
+            layout_ctx: &mut layout_ctx,
         };
         draw_flow(
-            &mut scene,
+            scene,
+            &size,
             &mut markdown_ctx,
             &self.scroll,
             &size,
-            &self.markdown_layout,
+            &self.brush_palete,
+            &self.markdown_layout
         );
         scene.pop_layer();
     }

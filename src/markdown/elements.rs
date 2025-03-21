@@ -1,26 +1,23 @@
 use core::fmt;
-use std::{fs, ops::Range, path::Path, sync::Arc};
 
 use image;
 use kurbo::{Affine, Cap, Insets, Join, Line, Rect, Size, Stroke, Vec2};
-use parley::{
-    Alignment, Cluster, Decoration, FontContext, FontFamily, FontStack, FontStyle,
-    GlyphRun, InlineBox, Layout, LayoutContext, PositionedLayoutItem, RangedBuilder,
-    RunMetrics, StyleProperty,
-};
-use peniko::{Color, Fill, Image, ImageFormat};
+use masonry::core::BrushIndex;
+use parley::{Alignment, FontFamily, FontStack, StyleProperty};
+use peniko::Color;
 use pulldown_cmark::HeadingLevel;
-use usvg::fontdb;
+use vello::Scene;
 use xilem::FontWeight;
 
-use crate::{
-    layout_flow::{LayoutData, LayoutFlow},
-    scene_utils::SizedScene,
-    theme::{get_theme, MarkdowTheme, Theme},
+use super::{
+    context::{MarkdownContext, TextContext},
+    text::{layouted_text::LayoutedText, simple::SimpleText, styles::BrushPalete, MarkdownText},
 };
-
-type Height = f64;
-type Width = f64;
+use crate::{
+    basic_types::{Height, Width},
+    layout_flow::{LayoutData, LayoutFlow},
+    theme::MarkdowTheme,
+};
 
 #[derive(Clone, Debug)]
 struct Margin {
@@ -101,14 +98,11 @@ impl MarkdownList {
         width: f64,
         reduce_top_margin: bool,
     ) -> Height {
+        let mut text_ctx: TextContext = TextContext::new(ctx.svg_ctx, ctx.layout_ctx, ctx.theme);
         self.indentation = match &mut self.marker {
-            ListMarker::Symbol { symbol, layout } => {
-                let mut builder =
-                    str_to_builder(symbol, &[], ctx.font_ctx, ctx.layout_ctx);
-                let mut marker_layout = builder.build(&symbol);
-                marker_layout.break_all_lines(None);
-                *layout = Box::new(marker_layout);
-                layout.full_width() as f64
+            ListMarker::Symbol { symbol } => {
+                symbol.build_layout(&mut text_ctx, None);
+                symbol.full_width()
                     + ctx.theme.markdown.bullet_list_indentation
                     + ctx.theme.markdown.list_after_indentation
             }
@@ -122,18 +116,15 @@ impl MarkdownList {
                     // Not ideal way to layout the numbered list, but works for now.
                     let mut str = (k as u32 + *start_number).to_string();
                     str.push('.');
-                    let mut builder =
-                        str_to_builder(&str, &[], ctx.font_ctx, ctx.layout_ctx);
-                    let mut marker_layout = builder.build(&str);
-                    marker_layout.break_all_lines(None);
-                    marker_layout.align(None, Alignment::End, false);
-                    let marker_width = marker_layout.full_width() as f64
+                    let mut symbol: SimpleText = str.into();
+                    symbol.align(None, Alignment::End, false);
+                    let marker_width = symbol.full_width()
                         + ctx.theme.markdown.numbered_list_indentation
                         + ctx.theme.markdown.list_after_indentation;
                     if marker_width > max_marker_width {
                         max_marker_width = marker_width;
                     }
-                    layouted.push(marker_layout);
+                    layouted.push(symbol);
                 }
                 max_marker_width
             }
@@ -167,18 +158,20 @@ impl MarkdownList {
 
     fn paint_one_element(
         &self,
-        scene: &mut SizedScene,
+        scene: &mut Scene,
+        scene_size: &Size,
         ctx: &mut MarkdownContext,
         position: &Vec2,
         element_size: &Size,
         index: usize,
+        brush_palete: &BrushPalete,
         flow: &LayoutFlow<MarkdownContent>,
     ) {
         match &self.marker {
-            ListMarker::Symbol { symbol: _, layout } => {
+            ListMarker::Symbol { symbol } => {
                 let marker_position = *position
                     + Vec2::new(ctx.theme.markdown.bullet_list_indentation, 0.0);
-                draw_text(layout, scene, &marker_position, &[]);
+                symbol.draw_text(scene, scene_size, &marker_position, brush_palete);
             }
             ListMarker::Numbers {
                 start_number: _,
@@ -186,22 +179,24 @@ impl MarkdownList {
             } => {
                 let mut marker_position = *position;
                 marker_position.x += self.indentation
-                    - layouted[index].full_width() as f64
+                    - layouted[index].full_width()
                     - ctx.theme.markdown.list_after_indentation;
-                draw_text(&layouted[index], scene, &marker_position, &[]);
+                layouted[index].draw_text(scene, scene_size, &marker_position, brush_palete);
             }
         }
         let item_position = *position + Vec2::new(self.indentation, 0.0);
         let item_size = *element_size - Size::new(self.indentation, 0.0);
-        draw_flow(scene, ctx, &item_position, &item_size, flow);
+        draw_flow(scene, scene_size, ctx, &item_position, &item_size, brush_palete, flow);
     }
 
     fn paint(
         &self,
-        scene: &mut SizedScene,
+        scene: &mut Scene,
+        scene_size: &Size,
         ctx: &mut MarkdownContext,
         position: &Vec2,
         element_size: &Size,
+        brush_palete: &BrushPalete,
     ) {
         self.margin
             .paint(position, element_size, |position, element_size| {
@@ -209,10 +204,12 @@ impl MarkdownList {
                 for (index, flow) in self.list.iter().enumerate() {
                     self.paint_one_element(
                         scene,
+                        scene_size,
                         ctx,
                         &position,
                         element_size,
                         index,
+                        brush_palete,
                         flow,
                     );
                     position.y += flow.height();
@@ -220,34 +217,23 @@ impl MarkdownList {
             });
     }
 }
-pub struct SvgContext {
-    pub fontdb: Arc<fontdb::Database>,
-}
-
-pub struct MarkdownContext<'a> {
-    pub svg_ctx: &'a SvgContext,
-    pub font_ctx: &'a mut FontContext,
-    pub layout_ctx: &'a mut LayoutContext<MarkdownBrush>,
-    pub theme: &'a Theme,
-}
 
 #[derive(Clone)]
 pub enum ListMarker {
     Symbol {
-        symbol: String,
-        layout: Box<Layout<MarkdownBrush>>,
+        symbol: SimpleText,
     },
     Numbers {
         start_number: u32,
-        layouted: Vec<Layout<MarkdownBrush>>,
+        layouted: Vec<SimpleText>,
     },
 }
 
 impl fmt::Debug for ListMarker {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ListMarker::Symbol { symbol, layout: _ } => {
-                write!(f, "ListMarker::Symbol {{ symbol: {} }}", symbol)
+            ListMarker::Symbol { symbol } => {
+                write!(f, "ListMarker::Symbol {{ symbol: {:?} }}", symbol)
             }
             ListMarker::Numbers {
                 start_number,
@@ -261,247 +247,9 @@ impl fmt::Debug for ListMarker {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct MarkdownBrush(Color);
-
-impl Default for MarkdownBrush {
-    fn default() -> Self {
-        MarkdownBrush(Color::from_rgb8(0x00, 0x00, 0x00))
-    }
-}
-
 enum ImageType {
     Svg,
     Rasterized(image::ImageFormat),
-}
-
-#[derive(Clone)]
-pub struct Link {
-    url: String,
-    index_range: Range<usize>,
-}
-
-impl Link {
-    pub fn new(url: String, index_range: Range<usize>) -> Self {
-        Self { url, index_range }
-    }
-}
-
-#[derive(Clone)]
-pub struct InlinedImage {
-    url: String,
-    data: Option<Image>,
-    text_index: usize,
-}
-
-impl InlinedImage {
-    pub fn new(url: String, text_index: usize) -> Self {
-        Self {
-            url,
-            text_index,
-            data: None,
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct MarkdownText {
-    str: String,
-    markers: Vec<TextMarker>,
-    text_layout: Layout<MarkdownBrush>,
-    inlined_images: Vec<InlinedImage>,
-    links: Vec<Link>,
-}
-
-impl fmt::Debug for MarkdownText {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "MarkdownText {{ str: {} }}", self.str)
-    }
-}
-
-impl MarkdownText {
-    pub fn new(
-        str: String,
-        markers: Vec<TextMarker>,
-        inlined_images: Vec<InlinedImage>,
-        links: Vec<Link>,
-    ) -> Self {
-        Self {
-            str,
-            markers,
-            text_layout: Layout::new(),
-            inlined_images,
-            links,
-        }
-    }
-
-    fn load_images(&mut self, svg_context: &SvgContext) {
-        for inlined_image in self.inlined_images.iter_mut() {
-            if inlined_image.data.is_none() {
-                // TODO: Do something about unwraps
-                // Maybe show broken link image or something and add something
-                // to some error feed???
-                // TODO: Add some cache and make image loading asynchronous.
-
-                // This conditions most likely means it is a local file link.
-                let (raw_data, image_type) = if !inlined_image.url.contains("://") {
-                    let path: &Path = inlined_image.url.as_ref();
-                    let buf = fs::read(&inlined_image.url).unwrap();
-                    let extension = path.extension().unwrap();
-                    let image_type = if extension.eq_ignore_ascii_case("svg") {
-                        ImageType::Svg
-                    } else {
-                        ImageType::Rasterized(
-                            image::ImageFormat::from_extension(extension).unwrap(),
-                        )
-                    };
-                    (buf, image_type)
-                } else {
-                    let mut response = ureq::get(&inlined_image.url).call().unwrap();
-                    let mime_type = response.body().mime_type().unwrap();
-                    let image_type = if mime_type == "image/svg+xml" {
-                        ImageType::Svg
-                    } else {
-                        ImageType::Rasterized(
-                            image::ImageFormat::from_mime_type(mime_type).unwrap(),
-                        )
-                    };
-                    let buf = response.body_mut().read_to_vec().unwrap();
-                    (buf, image_type)
-                };
-
-                let image_data: image::ImageBuffer<image::Rgba<u8>, Vec<u8>> =
-                    match image_type {
-                        ImageType::Svg => {
-                            let svg_str = String::from_utf8(raw_data).unwrap();
-                            let options = usvg::Options {
-                                fontdb: svg_context.fontdb.clone(),
-                                ..usvg::Options::default()
-                            };
-
-                            let svg_tree =
-                                usvg::Tree::from_str(&svg_str, &options).unwrap();
-                            let width = svg_tree.size().width().ceil() as u32;
-                            let height = svg_tree.size().height().ceil() as u32;
-                            let mut pixmap =
-                                tiny_skia::Pixmap::new(width, height).unwrap();
-                            resvg::render(
-                                &svg_tree,
-                                tiny_skia::Transform::identity(),
-                                &mut pixmap.as_mut(),
-                            );
-                            image::ImageBuffer::from_raw(
-                                width,
-                                height,
-                                pixmap.take(),
-                            )
-                            .unwrap()
-                        }
-                        ImageType::Rasterized(format) => {
-                            match image::load_from_memory_with_format(
-                                &raw_data, format,
-                            ) {
-                                Ok(image) => image.to_rgba8(),
-                                Err(_) => {
-                                    // Try to fallback to automatic format recognition.
-                                    image::load_from_memory(&raw_data)
-                                        .unwrap_or_else(
-                                        |err| {
-                                            panic!("ERROR: Loading image with path {} failed with error: {}", inlined_image.url, err)
-                                        }).to_rgba8()
-                                }
-                            }
-                        }
-                    };
-
-                let (width, height) = image_data.dimensions();
-                inlined_image.data = Some(Image::new(
-                    image_data.to_vec().into(),
-                    ImageFormat::Rgba8,
-                    width,
-                    height,
-                ));
-            }
-        }
-    }
-
-    fn pre_fill_builder<'a>(
-        &'a self,
-        font_ctx: &'a mut FontContext,
-        layout_ctx: &'a mut LayoutContext<MarkdownBrush>,
-    ) -> RangedBuilder<'a, MarkdownBrush> {
-        // TODO: This is a bit fishy place to load images
-        let mut builder =
-            str_to_builder(&self.str, &self.markers, font_ctx, layout_ctx);
-        for (image_index, inlined_image) in self.inlined_images.iter().enumerate() {
-            if let Some(data) = &inlined_image.data {
-                builder.push_inline_box(InlineBox {
-                    id: image_index as u64,
-                    index: inlined_image.text_index,
-                    width: data.width as f32,
-                    height: data.height as f32,
-                });
-            }
-        }
-        builder
-    }
-
-    fn load_and_layout_as_header(
-        &mut self,
-        ctx: &mut MarkdownContext,
-        width: f64,
-        level: HeadingLevel,
-    ) {
-        self.load_images(ctx.svg_ctx);
-        let mut builder = self.pre_fill_builder(ctx.font_ctx, ctx.layout_ctx);
-        let font_size = match level {
-            HeadingLevel::H1 => ctx.theme.text.text_size as f32 * 2.125,
-            HeadingLevel::H2 => ctx.theme.text.text_size as f32 * 1.875,
-            HeadingLevel::H3 => ctx.theme.text.text_size as f32 * 1.5,
-            HeadingLevel::H4 => ctx.theme.text.text_size as f32 * 1.25,
-            HeadingLevel::H5 => ctx.theme.text.text_size as f32 * 1.125,
-            HeadingLevel::H6 => ctx.theme.text.text_size as f32,
-        };
-        builder.push_default(StyleProperty::FontSize(font_size));
-        builder.push_default(StyleProperty::LineHeight(
-            ctx.theme.markdown.header_line_height,
-        ));
-        builder.push_default(StyleProperty::FontWeight(FontWeight::BOLD));
-        let mut layout = builder.build(&self.str);
-        layout.break_all_lines(Some(width as f32));
-        self.text_layout = layout;
-    }
-
-    // Loads inlined images and layouts the text with prepared box reserved for
-    // them.
-    fn load_and_layout_text(&mut self, ctx: &mut MarkdownContext, width: f64) {
-        self.load_images(ctx.svg_ctx);
-        let mut builder = self.pre_fill_builder(ctx.font_ctx, ctx.layout_ctx);
-        let mut layout = builder.build(&self.str);
-        layout.break_all_lines(Some(width as f32));
-        self.text_layout = layout;
-    }
-
-    fn layout_as_code(&mut self, ctx: &mut MarkdownContext, width: f64) {
-        let mut builder = self.pre_fill_builder(ctx.font_ctx, ctx.layout_ctx);
-        builder.push_default(StyleProperty::FontStack(
-            ctx.theme.text.monospace_font_stack.clone(),
-        ));
-        builder.push_default(StyleProperty::Brush(MarkdownBrush(
-            ctx.theme.text.monospace_text_color,
-        )));
-        let mut layout = builder.build(&self.str);
-        layout.break_all_lines(Some(width as f32));
-        self.text_layout = layout;
-    }
-
-    fn draw_text(&self, scene: &mut SizedScene, position: &Vec2) {
-        draw_text(&self.text_layout, scene, position, &self.inlined_images);
-    }
-
-    fn height(&self) -> Height {
-        self.text_layout.height() as f64
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -530,7 +278,9 @@ impl Paragraph {
         }
 
         self.margin.layout_by_width(width, |width| {
-            self.text.load_and_layout_text(ctx, width);
+        let mut text_ctx: TextContext = TextContext::new(ctx.svg_ctx, ctx.layout_ctx, ctx.theme);
+            self.text
+                .load_and_layout_text(&mut text_ctx, &[], &[], width);
             self.text.height()
         })
     }
@@ -541,14 +291,17 @@ impl Paragraph {
 
     fn paint(
         &self,
-        scene: &mut SizedScene,
+        scene: &mut Scene,
+        scene_size: &Size,
         _ctx: &mut MarkdownContext,
         position: &Vec2,
         element_size: &Size,
+        brush_palete: &BrushPalete,
     ) {
         self.margin
             .paint(position, element_size, |position, _element_size| {
-                self.text.draw_text(scene, position);
+                self.text
+                    .draw_text(scene, scene_size, position, brush_palete);
             });
     }
 }
@@ -570,11 +323,31 @@ impl CodeBlock {
         }
     }
 
-    fn layout(&mut self, ctx: &mut MarkdownContext, width: Width) -> Height {
+    fn layout(
+        &mut self,
+        ctx: &mut MarkdownContext,
+        width: Width,
+    ) -> Height {
         self.margin.insets = Insets::uniform(ctx.theme.markdown.code_block_margin);
 
+        let extra_default_styles = vec![
+            StyleProperty::FontStack(ctx.theme.text.monospace_font_stack.clone()),
+            StyleProperty::Brush(BrushPalete::CODE_BRUSH),
+        ];
+
+        let mut text_ctx: TextContext = TextContext {
+            layout_ctx: ctx.layout_ctx,
+            svg_ctx: ctx.svg_ctx,
+            theme: ctx.theme,
+        };
+
         self.margin.layout_by_width(width, |width| {
-            self.text.layout_as_code(ctx, width);
+            self.text.load_and_layout_text(
+                &mut text_ctx,
+                &extra_default_styles,
+                &[],
+                width,
+            );
             self.text.height()
         })
     }
@@ -585,14 +358,17 @@ impl CodeBlock {
 
     fn paint(
         &self,
-        scene: &mut SizedScene,
+        scene: &mut Scene,
+        scene_size: &Size,
         _ctx: &mut MarkdownContext,
         position: &Vec2,
         element_size: &Size,
+        brush_palete: &BrushPalete,
     ) {
         self.margin
             .paint(position, element_size, |position, _element_size| {
-                self.text.draw_text(scene, position);
+                self.text
+                    .draw_text(scene, scene_size, position, brush_palete);
             });
     }
 }
@@ -611,7 +387,7 @@ impl IndentationDecoration {
     fn padding_and_symbol(
         &self,
         ctx: &mut MarkdownContext,
-    ) -> (Margin, Layout<MarkdownBrush>) {
+    ) -> (Margin, LayoutedText) {
         let theme = &ctx.theme.markdown;
         let left = match self {
             IndentationDecoration::Indentation => {
@@ -632,69 +408,65 @@ impl IndentationDecoration {
             _ => theme.indentation_box_margin + theme.indentation_box_line_width,
         };
 
-        let symbol = match self {
-            IndentationDecoration::Indentation => "".to_string(),
-            IndentationDecoration::Note => theme.indentation_note_sign.clone(),
+        let mut symbol: LayoutedText = match self {
+            IndentationDecoration::Indentation => "".to_string().into(),
+            IndentationDecoration::Note => theme.indentation_note_sign.clone().into(),
             IndentationDecoration::Important => {
-                theme.indentation_important_sign.clone()
+                theme.indentation_important_sign.clone().into()
             }
-            IndentationDecoration::Tip => theme.indentation_tip_sign.clone(),
-            IndentationDecoration::Warning => theme.indentation_warning_sign.clone(),
-            IndentationDecoration::Caution => theme.indentation_caution_sign.clone(),
+            IndentationDecoration::Tip => theme.indentation_tip_sign.clone().into(),
+            IndentationDecoration::Warning => theme.indentation_warning_sign.clone().into(),
+            IndentationDecoration::Caution => theme.indentation_caution_sign.clone().into(),
         };
 
-        let color = self.color(theme);
+        let (_color, brush) = self.color(theme);
 
-        let layout = if symbol.is_empty() {
-            Layout::new()
-        } else {
-            let mut builder =
-                str_to_builder(&symbol, &[], ctx.font_ctx, ctx.layout_ctx);
+        symbol.build_layout(ctx.layout_ctx, ctx.theme.scale, None, |builder|{
+            BrushPalete::fill_default_styles(ctx.theme, builder);
             builder.push_default(StyleProperty::FontStack(FontStack::Single(
                 FontFamily::Named("FiraCode Nerd Font".into()),
             )));
-            builder.push_default(StyleProperty::Brush(MarkdownBrush(color)));
-            let mut layout = builder.build(&symbol);
-            layout.break_all_lines(None);
-            layout
-        };
+            builder.push_default(StyleProperty::Brush(brush));
+        });
 
         let additional_left_padding = if symbol.is_empty() {
             0.0
         } else {
             // TODO: This should be themeable???
-            layout.full_width() as f64
+            symbol.full_width()
                 + (theme.indentation_sign_horizontal_padding * 2.0)
         };
 
         (
             Margin::new(left + additional_left_padding, top, right, bottom),
-            layout,
+            symbol
         )
     }
 
-    fn color(&self, theme: &MarkdowTheme) -> Color {
+    fn color(&self, theme: &MarkdowTheme) -> (Color, BrushIndex)  {
         match self {
-            IndentationDecoration::Indentation => theme.indentation_color,
-            IndentationDecoration::Note => theme.indentation_note_color,
-            IndentationDecoration::Important => theme.indentation_important_color,
-            IndentationDecoration::Tip => theme.indentation_tip_color,
-            IndentationDecoration::Warning => theme.indentation_warning_color,
-            IndentationDecoration::Caution => theme.indentation_caution_color,
+            IndentationDecoration::Indentation => (theme.indentation_color, BrushPalete::INDENTATION_BRUSH),
+            IndentationDecoration::Note => (theme.indentation_note_color, BrushPalete::NOTE_BRUSH),
+            IndentationDecoration::Important => (theme.indentation_important_color, BrushPalete::IMPORTANT_BRUSH),
+            IndentationDecoration::Tip => (theme.indentation_tip_color, BrushPalete::TIP_BRUSH),
+            IndentationDecoration::Warning => (theme.indentation_warning_color, BrushPalete::WARNING_BRUSH),
+            IndentationDecoration::Caution => (theme.indentation_caution_color, BrushPalete::CAUTION_BRUSH),
         }
     }
 
     fn paint(
         &self,
-        scene: &mut SizedScene,
+        scene: &mut Scene,
+        scene_size: &Size,
         ctx: &mut MarkdownContext,
         position: &Vec2,
         element_size: &Size,
-        symbol_layout: &Layout<MarkdownBrush>,
+        symbol: &LayoutedText,
         padding: &Margin,
+        brush_palete: &BrushPalete,
     ) {
         let theme = &ctx.theme.markdown;
-        let color = self.color(&ctx.theme.markdown);
+        let (color, _brush) = self.color(&ctx.theme.markdown);
         match self {
             IndentationDecoration::Indentation => {
                 let x0 = theme.indentation_line_margine
@@ -775,12 +547,12 @@ impl IndentationDecoration {
                 );
 
                 let x = (padding.insets.x0
-                    - symbol_layout.full_width() as f64
+                    - symbol.full_width()
                     - theme.indentation_box_line_width)
                     / 2.0;
                 let y = padding.insets.y0; //theme.indentation_sign_top_padding;
 
-                draw_text(symbol_layout, scene, &(*position + Vec2::new(x, y)), &[]);
+                symbol.draw_text(scene, scene_size, &(*position + Vec2::new(x, y)), |_|{None}, &brush_palete.palete);
             }
         }
     }
@@ -792,7 +564,7 @@ pub struct Indented {
     padding: Margin,
     decoration: IndentationDecoration,
     flow: LayoutFlow<MarkdownContent>,
-    symbol_layout: Layout<MarkdownBrush>,
+    symbol: LayoutedText,
 }
 
 impl std::fmt::Debug for Indented {
@@ -815,19 +587,23 @@ impl Indented {
             flow,
             margin: Margin::ZERO,
             padding: Margin::ZERO,
-            symbol_layout: Layout::new(),
+            symbol: LayoutedText::empty(),
         }
     }
 
-    fn layout(&mut self, ctx: &mut MarkdownContext, width: Width) -> Height {
+    fn layout(
+        &mut self,
+        ctx: &mut MarkdownContext,
+        width: Width,
+    ) -> Height {
         self.margin.insets.x0 = ctx.theme.markdown.indentation_horizonatl_margin;
         self.margin.insets.x1 = ctx.theme.markdown.indentation_horizonatl_margin;
         self.margin.insets.y0 = ctx.theme.markdown.indentation_vertical_margin;
         self.margin.insets.y1 = ctx.theme.markdown.indentation_vertical_margin;
 
-        let (padding, layout) = self.decoration.padding_and_symbol(ctx);
+        let (padding, symbol) = self.decoration.padding_and_symbol(ctx);
         self.padding = padding;
-        self.symbol_layout = layout;
+        self.symbol = symbol;
 
         self.margin.layout_by_width(width, |width| {
             self.flow.apply_to_all(|(i, data)| {
@@ -845,26 +621,30 @@ impl Indented {
 
     fn paint(
         &self,
-        scene: &mut SizedScene,
+        scene: &mut Scene,
+        scene_size: &Size,
         ctx: &mut MarkdownContext,
         position: &Vec2,
         element_size: &Size,
+        brush_palete: &BrushPalete,
     ) {
         self.margin
             .paint(position, element_size, |position, element_size| {
                 self.decoration.paint(
                     scene,
+                    scene_size,
                     ctx,
                     position,
                     element_size,
-                    &self.symbol_layout,
+                    &self.symbol,
                     &self.padding,
+                    brush_palete,
                 );
                 self.padding.paint(
                     position,
                     element_size,
                     |position, element_size| {
-                        draw_flow(scene, ctx, position, element_size, &self.flow);
+                        draw_flow(scene, scene_size, ctx, position, element_size, brush_palete, &self.flow);
                     },
                 )
             });
@@ -897,9 +677,28 @@ impl Header {
         if reduce_top_margin {
             self.margin.insets.y0 = 0.0;
         }
+        let extra_default_styles = vec![
+            StyleProperty::FontSize(match self.level {
+                HeadingLevel::H1 => ctx.theme.text.text_size as f32 * 2.125,
+                HeadingLevel::H2 => ctx.theme.text.text_size as f32 * 1.875,
+                HeadingLevel::H3 => ctx.theme.text.text_size as f32 * 1.5,
+                HeadingLevel::H4 => ctx.theme.text.text_size as f32 * 1.25,
+                HeadingLevel::H5 => ctx.theme.text.text_size as f32 * 1.125,
+                HeadingLevel::H6 => ctx.theme.text.text_size as f32,
+            }),
+            StyleProperty::LineHeight(ctx.theme.markdown.header_line_height),
+            StyleProperty::FontWeight(FontWeight::BOLD),
+        ];
+
+        let mut text_ctx: TextContext = TextContext::new(ctx.svg_ctx, ctx.layout_ctx, ctx.theme);
 
         self.margin.layout_by_width(width, |width| {
-            self.text.load_and_layout_as_header(ctx, width, self.level);
+            self.text.load_and_layout_text(
+                &mut text_ctx,
+                &extra_default_styles,
+                &[],
+                width,
+            );
             self.text.height()
         })
     }
@@ -910,14 +709,17 @@ impl Header {
 
     fn paint(
         &self,
-        scene: &mut SizedScene,
+        scene: &mut Scene,
+        scene_size: &Size,
         _ctx: &mut MarkdownContext,
         position: &Vec2,
         element_size: &Size,
+        brush_palete: &BrushPalete,
     ) {
         self.margin
             .paint(position, element_size, |position, _element_size| {
-                self.text.draw_text(scene, position);
+                self.text
+                    .draw_text(scene, scene_size, position, brush_palete);
             });
     }
 }
@@ -962,7 +764,7 @@ impl HorizontalLine {
 
     fn paint(
         &self,
-        scene: &mut SizedScene,
+        scene: &mut Scene,
         ctx: &mut MarkdownContext,
         position: &Vec2,
         element_size: &Size,
@@ -1040,31 +842,68 @@ impl MarkdownContent {
 
     pub fn paint(
         &self,
-        scene: &mut SizedScene,
+        scene: &mut Scene,
+        scene_size: &Size,
         ctx: &mut MarkdownContext,
         position: &Vec2,
         element_size: &Size,
+        brush_palete: &BrushPalete,
     ) {
         // TODO: Draw indentation decoration
         match self {
             MarkdownContent::Paragraph(paragraph) => {
-                paragraph.paint(scene, ctx, position, element_size);
+                paragraph.paint(
+                    scene,
+                    scene_size,
+                    ctx,
+                    position,
+                    element_size,
+                    brush_palete,
+                );
             }
             // TODO: Add support for solo image
             MarkdownContent::CodeBlock(code_block) => {
-                code_block.paint(scene, ctx, position, element_size);
+                code_block.paint(
+                    scene,
+                    scene_size,
+                    ctx,
+                    position,
+                    element_size,
+                    brush_palete,
+                );
             }
             MarkdownContent::Indented(indented) => {
-                indented.paint(scene, ctx, position, element_size);
+                indented.paint(
+                    scene,
+                    scene_size,
+                    ctx,
+                    position,
+                    element_size,
+                    brush_palete,
+                );
             }
             MarkdownContent::List(list) => {
-                list.paint(scene, ctx, position, element_size);
+                list.paint(
+                    scene,
+                    scene_size,
+                    ctx,
+                    position,
+                    element_size,
+                    brush_palete,
+                );
             }
             MarkdownContent::HorizontalLine(horizontal_line) => {
                 horizontal_line.paint(scene, ctx, position, element_size);
             }
             MarkdownContent::Header(header) => {
-                header.paint(scene, ctx, position, element_size);
+                header.paint(
+                    scene,
+                    scene_size,
+                    ctx,
+                    position,
+                    element_size,
+                    brush_palete,
+                );
             }
         }
     }
@@ -1087,312 +926,40 @@ impl MarkdownContent {
     }
 }
 
-fn draw_text(
-    layout: &Layout<MarkdownBrush>,
-    scene: &mut SizedScene,
-    position: &Vec2,
-    inlined_images: &[InlinedImage],
-) {
-    let transform: Affine = Affine::translate(*position);
-
-    // The start_y is in layout coordinates.
-    let start_y = if position.y < 0.0 {
-        -position.y as f32
-    } else {
-        0.0
-    };
-    // The stop_y is in layout coordinates.
-    let stop_y = layout.height() + start_y;
-
-    let mut top_line_index =
-        if let Some((cluster, _)) = Cluster::from_point(layout, 0.0, start_y) {
-            cluster.path().line_index()
-        } else {
-            0
-        };
-
-    while let Some(line) = layout.get(top_line_index) {
-        let line_metrics = line.metrics();
-        if line_metrics.min_coord > stop_y {
-            break;
-        }
-        for item in line.items() {
-            match item {
-                PositionedLayoutItem::GlyphRun(glyph_run) => {
-                    let style = glyph_run.style();
-                    let text_color = &style.brush;
-
-                    let run = glyph_run.run();
-                    // TODO: This needs to be some kind of a flow layout.
-                    let font = run.font();
-                    let font_size = run.font_size();
-                    let synthesis = run.synthesis();
-                    let glyph_xform = synthesis.skew().map(|angle| {
-                        Affine::skew(angle.to_radians().tan() as f64, 0.0)
-                    });
-                    let coords = run.normalized_coords();
-                    scene
-                        .draw_glyphs(font)
-                        .brush(text_color.0)
-                        .hint(true)
-                        .transform(transform)
-                        .glyph_transform(glyph_xform)
-                        .font_size(font_size)
-                        .normalized_coords(coords)
-                        .draw(
-                            Fill::NonZero,
-                            glyph_run.positioned_glyphs().map(|glyph| {
-                                vello::Glyph {
-                                    id: glyph.id as _,
-                                    x: glyph.x,
-                                    y: glyph.y,
-                                }
-                            }),
-                        );
-
-                    let run_metrics = run.metrics();
-                    if let Some(underline) = &style.underline {
-                        draw_underline(
-                            scene,
-                            underline,
-                            &glyph_run,
-                            run_metrics,
-                            &transform,
-                        );
-                    }
-
-                    if let Some(strikethrough) = &style.strikethrough {
-                        draw_strikethrough(
-                            scene,
-                            strikethrough,
-                            &glyph_run,
-                            run_metrics,
-                            &transform,
-                        );
-                    }
-                }
-                PositionedLayoutItem::InlineBox(positioned_inline_box) => {
-                    // TODO: What to do when this thing fails???
-                    let image = &inlined_images[positioned_inline_box.id as usize];
-                    let image_translation = *position
-                        + Vec2::new(
-                            positioned_inline_box.x as f64,
-                            positioned_inline_box.y as f64,
-                        );
-                    // TODO: The unwrap is not nice...
-                    draw_image(
-                        scene,
-                        image.data.as_ref().unwrap(),
-                        image_translation,
-                    );
-                }
-            }
-        }
-        top_line_index += 1;
-    }
-}
-
 impl LayoutData for MarkdownContent {
     fn height(&self) -> Height {
         self.height()
     }
 }
 
-#[derive(Clone)]
-pub struct TextMarker {
-    // TODO: Think about making it into range
-    pub start_pos: usize,
-    pub end_pos: usize,
-    pub kind: MarkerKind,
-}
-
-impl TextMarker {
-    fn feed_to_builder<'a>(
-        &self,
-        builder: &'a mut RangedBuilder<MarkdownBrush>,
-        theme: &'a Theme,
-    ) {
-        let rang = self.start_pos..self.end_pos;
-        match self.kind {
-            MarkerKind::Bold => {
-                builder.push(StyleProperty::FontWeight(FontWeight::BOLD), rang)
-            }
-            MarkerKind::Italic => {
-                builder.push(StyleProperty::FontStyle(FontStyle::Italic), rang)
-            }
-            MarkerKind::Strikethrough => {
-                builder.push(StyleProperty::Strikethrough(true), rang)
-            }
-            MarkerKind::InlineCode => {
-                // TODO: Draw additional decorations??? Maybe into the brush???
-                builder.push(
-                    StyleProperty::FontStack(
-                        theme.text.monospace_font_stack.clone(),
-                    ),
-                    rang.clone(),
-                );
-                builder.push(
-                    StyleProperty::Brush(MarkdownBrush(
-                        theme.text.monospace_text_color,
-                    )),
-                    rang,
-                );
-            }
-        }
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub enum MarkerKind {
-    Bold,
-    Italic,
-    Strikethrough,
-    InlineCode,
-}
-
-pub struct MarkerState {
-    pub bold_start: usize,
-    pub italic_start: usize,
-    pub strikethrough_start: usize,
-    pub markers: Vec<TextMarker>,
-}
-
-impl MarkerState {
-    pub fn new() -> Self {
-        Self {
-            bold_start: 0,
-            italic_start: 0,
-            strikethrough_start: 0,
-            markers: Vec::new(),
-        }
-    }
-}
-
-impl Default for MarkerState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-fn draw_image(scene: &mut SizedScene, image: &Image, translation: Vec2) {
-    let transform: Affine = Affine::translate(translation);
-    scene.draw_image(image, transform);
-}
-
 // TODO: Shoul this be a part of some markdown object??
 pub fn draw_flow(
-    scene: &mut SizedScene,
+    scene: &mut Scene,
+    scene_size: &Size,
     ctx: &mut MarkdownContext,
     position: &Vec2,
     element_size: &Size,
+    brush_palete: &BrushPalete,
     flow: &LayoutFlow<MarkdownContent>,
 ) {
     let offset = if position.y < 0.0 { -position.y } else { 0.0 };
     let height = if position.y > 0.0 {
-        scene.size.height - position.y
+        scene_size.height - position.y
     } else {
-        scene.size.height
+        scene_size.height
     };
     let visible_parts = flow.get_visible_parts(offset, height);
 
     for visible_part in visible_parts.iter() {
         let part_position = *position + Vec2::new(0.0, visible_part.offset);
         let part_size = Size::new(element_size.width, visible_part.height);
-        visible_part
-            .data
-            .paint(scene, ctx, &part_position, &part_size);
+        visible_part.data.paint(
+            scene,
+            scene_size,
+            ctx,
+            &part_position,
+            &part_size,
+            brush_palete,
+        );
     }
-}
-
-fn draw_underline(
-    scene: &mut SizedScene,
-    underline: &Decoration<MarkdownBrush>,
-    glyph_run: &GlyphRun<'_, MarkdownBrush>,
-    run_metrics: &RunMetrics,
-    transform: &Affine,
-) {
-    let offset = underline.offset.unwrap_or(run_metrics.underline_offset);
-    let stroke_size = underline.size.unwrap_or(run_metrics.underline_size);
-    let y1 = glyph_run.baseline() - offset - (stroke_size / 2.0);
-    let x1 = glyph_run.offset();
-    let x2 = x1 + glyph_run.advance();
-    let underline_shape = Line::new((x1, y1), (x2, y1));
-
-    let stroke = Stroke {
-        width: stroke_size as f64,
-        join: Join::Bevel,
-        miter_limit: 4.0,
-        start_cap: Cap::Butt,
-        end_cap: Cap::Butt,
-        dash_pattern: Default::default(),
-        dash_offset: 0.0,
-    };
-
-    scene.stroke(
-        &stroke,
-        *transform,
-        underline.brush.0,
-        Some(Affine::IDENTITY),
-        &underline_shape,
-    );
-}
-
-fn draw_strikethrough(
-    scene: &mut SizedScene,
-    strikethrough: &Decoration<MarkdownBrush>,
-    glyph_run: &GlyphRun<'_, MarkdownBrush>,
-    run_metrics: &RunMetrics,
-    transform: &Affine,
-) {
-    let offset = strikethrough
-        .offset
-        .unwrap_or(run_metrics.strikethrough_offset);
-    let size = strikethrough.size.unwrap_or(run_metrics.strikethrough_size);
-    // FIXME: This offset looks fishy... I think I should add it instead.
-    let y1 = glyph_run.baseline() - offset - (size / 2.0);
-    let x1 = glyph_run.offset();
-    let x2 = x1 + glyph_run.advance();
-    let strikethrough_shape = Line::new((x1, y1), (x2, y1));
-
-    let stroke = Stroke {
-        width: size as f64,
-        join: Join::Bevel,
-        miter_limit: 4.0,
-        start_cap: Cap::Butt,
-        end_cap: Cap::Butt,
-        dash_pattern: Default::default(),
-        dash_offset: 0.0,
-    };
-
-    scene.stroke(
-        &stroke,
-        *transform,
-        strikethrough.brush.0,
-        Some(Affine::IDENTITY),
-        &strikethrough_shape,
-    );
-}
-
-// TODO: I don't like this function. I'll need to think of something better.
-fn str_to_builder<'a>(
-    text: &'a str,
-    markers: &[TextMarker],
-    font_ctx: &'a mut FontContext,
-    layout_ctx: &'a mut LayoutContext<MarkdownBrush>,
-) -> RangedBuilder<'a, MarkdownBrush> {
-    // TODO: Pass theme from ctx...
-    let theme = get_theme();
-
-    let mut builder: RangedBuilder<'_, MarkdownBrush> =
-        layout_ctx.ranged_builder(font_ctx, text, theme.scale);
-    builder.push_default(StyleProperty::Brush(MarkdownBrush(theme.text.text_color)));
-    builder.push_default(StyleProperty::FontSize(theme.text.text_size as f32));
-    builder.push_default(StyleProperty::FontStack(theme.text.font_stack.clone()));
-    builder.push_default(StyleProperty::FontWeight(FontWeight::NORMAL));
-    builder.push_default(StyleProperty::FontStyle(FontStyle::Normal));
-    builder.push_default(StyleProperty::LineHeight(1.0));
-    for marker in markers.iter() {
-        marker.feed_to_builder(&mut builder, &theme);
-    }
-    builder
 }

@@ -23,6 +23,21 @@ pub trait LayoutData {
     fn height(&self) -> f64;
 }
 
+impl<T> LayoutData for Box<T>
+where
+    T: LayoutData + ?Sized,
+{
+    fn height(&self) -> f64 {
+        self.as_ref().height()
+    }
+}
+
+impl LayoutData for () {
+    fn height(&self) -> f64 {
+        0.0
+    }
+}
+
 pub struct MutableData<'a, Data: LayoutData> {
     index: usize,
     layout_flow: &'a mut LayoutFlow<Data>,

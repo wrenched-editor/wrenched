@@ -1,9 +1,12 @@
+pub mod basic_types;
 pub mod buffer;
 pub mod code_text_layout;
 pub mod code_widget;
 pub mod command;
+pub mod generation;
 pub mod layout_flow;
 pub mod markdown;
 pub mod scene_utils;
+pub mod svg_fonts;
 pub mod theme;
 pub mod utils;

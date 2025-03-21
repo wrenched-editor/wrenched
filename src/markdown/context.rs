@@ -1,72 +1,71 @@
-use parley::{FontContext, LayoutContext};
+use std::sync::Arc;
+
+use masonry::core::BrushIndex;
+use parley::FontContext;
 use usvg::fontdb;
 
-use super::elements::MarkdownBrush;
 use crate::theme::Theme;
 
-pub struct SvgContext<'a> {
-    pub fontdb: &'a fontdb::Database,
+pub struct SvgContext {
+    pub fontdb: Arc<fontdb::Database>,
 }
 
-pub struct MarkdownContext<'a> {
-    pub svg_ctx: &'a SvgContext<'a>,
-    pub font_ctx: &'a mut FontContext,
-    pub layout_ctx: &'a mut LayoutContext<MarkdownBrush>,
+pub struct MarkdownContext<'a, 'b> {
+    pub svg_ctx: &'a SvgContext,
+    pub layout_ctx: &'a mut LayoutContext<'b>,
     pub theme: &'a Theme,
 }
 
-pub struct TextContext<'a> {
-    pub svg_ctx: &'a SvgContext<'a>,
-    pub font_ctx: &'a mut FontContext,
-    pub layout_ctx: &'a mut LayoutContext<MarkdownBrush>,
+pub struct LayoutContext<'a> {
+    pub font_ctx: &'a mut parley::FontContext,
+    pub layout_ctx: &'a mut parley::LayoutContext<BrushIndex>,
+}
+
+impl <'a> LayoutContext<'a> {
+    pub fn new(font_ctx: &'a mut FontContext, layout_ctx: &'a mut parley::LayoutContext<BrushIndex>) -> LayoutContext<'a> {
+LayoutContext{
+    font_ctx,
+    layout_ctx,
+}
+    }
+}
+
+pub struct TextContext<'a, 'b> {
+    pub layout_ctx: &'a mut LayoutContext<'b>,
+    pub svg_ctx: &'a SvgContext,
     pub theme: &'a Theme,
 }
 
-impl<'a> SvgContext<'a> {
-    pub fn new(fontdb: &'a fontdb::Database) -> SvgContext<'a> {
+impl SvgContext {
+    pub fn new(fontdb: Arc<fontdb::Database>) -> SvgContext {
         SvgContext { fontdb }
     }
 }
 
-impl<'a> TextContext<'a> {
+impl<'a, 'b> TextContext<'a, 'b> {
     pub fn new(
         svg_ctx: &'a SvgContext,
-        font_ctx: &'a mut FontContext,
-        layout_ctx: &'a mut LayoutContext<MarkdownBrush>,
+        layout_ctx: &'a mut LayoutContext<'b>,
         theme: &'a Theme,
-    ) -> TextContext<'a> {
+    ) -> TextContext<'a, 'b> {
         TextContext {
             svg_ctx,
-            font_ctx,
             layout_ctx,
             theme,
         }
     }
 }
 
-impl<'a> MarkdownContext<'a> {
+impl<'a, 'b> MarkdownContext<'a, 'b> {
     pub fn new(
         svg_ctx: &'a SvgContext,
-        font_ctx: &'a mut FontContext,
-        layout_ctx: &'a mut LayoutContext<MarkdownBrush>,
+        layout_ctx: &'a mut LayoutContext<'b>,
         theme: &'a Theme,
-    ) -> MarkdownContext<'a> {
+    ) -> MarkdownContext<'a, 'b> {
         MarkdownContext {
             svg_ctx,
-            font_ctx,
             layout_ctx,
             theme,
-        }
-    }
-}
-
-impl <'a> From<MarkdownContext<'a>> for TextContext<'a> {
-    fn from(value: MarkdownContext<'a>) -> TextContext<'a> {
-        TextContext {
-            svg_ctx: value.svg_ctx,
-            font_ctx: value.font_ctx,
-            layout_ctx: value.layout_ctx,
-            theme: value.theme,
         }
     }
 }
