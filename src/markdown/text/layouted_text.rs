@@ -2,10 +2,12 @@ use std::fmt;
 
 use kurbo::{Affine, BezPath, Cap, Join, Line, Point, Rect, Size, Stroke, Vec2};
 use masonry::core::BrushIndex;
-use parley::{Alignment, Cluster, Decoration, GlyphRun, Layout, LineMetrics, PositionedLayoutItem, RangedBuilder, RunMetrics};
+use parley::{
+    Alignment, Cluster, Cursor, Decoration, GlyphRun, Layout, LineMetrics,
+    PositionedLayoutItem, RangedBuilder, RunMetrics,
+};
 use peniko::{BlendMode, Fill, Image};
-use vello::Scene;
-use vello::peniko::Color;
+use vello::{peniko::Color, Scene};
 
 use crate::markdown::context::LayoutContext;
 
@@ -37,7 +39,6 @@ impl Brush {
     }
 }
 
-
 #[derive(Clone)]
 pub struct LayoutedText {
     text: String,
@@ -51,9 +52,7 @@ impl fmt::Debug for LayoutedText {
 }
 
 impl LayoutedText {
-    pub fn new(
-        str: String,
-    ) -> Self {
+    pub fn new(str: String) -> Self {
         Self {
             text: str,
             layout: Layout::new(),
@@ -67,6 +66,10 @@ impl LayoutedText {
         }
     }
 
+    pub fn cursor_position(&self, point: &Vec2) -> Cursor {
+        Cursor::from_point(&self.layout, point.x as f32, point.y as f32)
+    }
+
     pub fn is_empty(&self) -> bool {
         self.text.is_empty()
     }
@@ -75,7 +78,11 @@ impl LayoutedText {
         self.text = text.into();
     }
 
-    pub fn height(&self) -> f64{
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    pub fn height(&self) -> f64 {
         self.layout.height() as f64
     }
 
@@ -90,8 +97,8 @@ impl LayoutedText {
         max_advance: Option<f64>,
         style: F,
     ) where
-        F: FnOnce(&mut RangedBuilder<'_, BrushIndex>)
-        {
+        F: FnOnce(&mut RangedBuilder<'_, BrushIndex>),
+    {
         // TODO: This is a bit fishy place to load images
         let mut builder: RangedBuilder<'_, BrushIndex> = text_ctx
             .layout_ctx
@@ -106,7 +113,8 @@ impl LayoutedText {
         alignment: Alignment,
         align_when_overflowing: bool,
     ) {
-        self.layout.align(container_width, alignment, align_when_overflowing);
+        self.layout
+            .align(container_width, alignment, align_when_overflowing);
     }
 
     pub fn draw_text<'a, F>(
@@ -116,7 +124,9 @@ impl LayoutedText {
         position: &Vec2,
         get_image: F,
         brushes: &[Brush],
-    ) where F: Fn(u64) -> Option<&'a Image> {
+    ) where
+        F: Fn(u64) -> Option<&'a Image>,
+    {
         draw_text(
             &self.layout,
             scene,
@@ -135,7 +145,8 @@ pub fn draw_text<'a, F>(
     position: &Vec2,
     get_image: F,
     brushes: &[Brush],
-) where F: Fn(u64) -> Option<&'a Image>
+) where
+    F: Fn(u64) -> Option<&'a Image>,
 {
     let transform: Affine = Affine::translate(*position);
 
@@ -222,14 +233,14 @@ pub fn draw_text<'a, F>(
                     // TODO: What to do when this thing fails???
                     let image = get_image(positioned_inline_box.id);
                     if let Some(image) = image {
-                    let image_translation = *position
-                        + Vec2::new(
-                            positioned_inline_box.x as f64,
-                            positioned_inline_box.y as f64,
-                        );
-                    // TODO: The unwrap is not nice...
-                    let transform: Affine = Affine::translate(image_translation);
-                    scene.draw_image(image, transform);
+                        let image_translation = *position
+                            + Vec2::new(
+                                positioned_inline_box.x as f64,
+                                positioned_inline_box.y as f64,
+                            );
+                        // TODO: The unwrap is not nice...
+                        let transform: Affine = Affine::translate(image_translation);
+                        scene.draw_image(image, transform);
                     }
                 }
             }

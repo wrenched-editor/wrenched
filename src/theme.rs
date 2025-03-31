@@ -63,29 +63,8 @@ pub struct MarkdowTheme {
     pub list_after_indentation: f64,
     pub list_top_margin: f64,
 
-    pub indentation_horizonatl_margin: f64,
-    pub indentation_vertical_margin: f64,
-    pub indentation_line_margine: f64,
-    pub indentation_line_width: f64,
-
-    pub indentation_box_margin: f64,
-    pub indentation_box_line_width: f64,
-
-    pub indentation_color: Color,
-    pub indentation_note_color: Color,
-    pub indentation_important_color: Color,
-    pub indentation_tip_color: Color,
-    pub indentation_warning_color: Color,
-    pub indentation_caution_color: Color,
-
-    pub indentation_note_sign: String,
-    pub indentation_important_sign: String,
-    pub indentation_tip_sign: String,
-    pub indentation_warning_sign: String,
-    pub indentation_caution_sign: String,
-
-    pub indentation_sign_top_padding: f64,
-    pub indentation_sign_horizontal_padding: f64,
+    pub standard_quotation: StandardQuotation,
+    pub box_quotation: BoxQuotation,
 
     pub paragraph_top_margin: f64,
 
@@ -109,30 +88,48 @@ impl MarkdowTheme {
             list_after_indentation: 5.0,
             list_top_margin: 10.0,
 
-            indentation_horizonatl_margin: 10.0,
-            indentation_vertical_margin: 10.0,
-            indentation_line_margine: 5.0,
-            indentation_line_width: 4.0,
-
-            indentation_box_margin: 10.0,
-            indentation_box_line_width: 2.0,
-
-            indentation_color: Color::from_rgb8(0x4D, 0x4D, 0x4D),
-            indentation_note_color: Color::from_rgb8(0x4D, 0x4D, 0x4D),
-            indentation_important_color: Color::from_rgb8(254, 100, 11),
-            indentation_tip_color: Color::from_rgb8(4, 165, 229),
-            indentation_warning_color: Color::from_rgb8(223, 142, 29),
-            indentation_caution_color: Color::from_rgb8(210, 15, 57),
-
-            indentation_note_sign: "".to_string(),
-            indentation_important_sign: "".to_string(),
-            indentation_tip_sign: "󰛨".to_string(),
-            indentation_warning_sign: "".to_string(),
-            //indentation_warning_sign: "--".to_string(),
-            indentation_caution_sign: "".to_string(),
-
-            indentation_sign_top_padding: 5.0,
-            indentation_sign_horizontal_padding: 5.0,
+            standard_quotation: StandardQuotation {
+                margine: Margin {
+                    top: 10.0,
+                    right: 10.0,
+                    bottom: 10.0,
+                    left: 10.0,
+                },
+                line_horizontal_padding: 5.0,
+                line_width: 4.0,
+                color: Color::from_rgb8(0x4D, 0x4D, 0x4D),
+            },
+            box_quotation: BoxQuotation {
+                margin: Margin {
+                    top: 10.0,
+                    right: 10.0,
+                    bottom: 10.0,
+                    left: 10.0,
+                },
+                box_padding: Padding {
+                    top: 5.0,
+                    right: 5.0,
+                    bottom: 5.0,
+                    left: 5.0,
+                },
+                symbol_padding: Padding {
+                    top: 5.0,
+                    right: 5.0,
+                    bottom: 5.0,
+                    left: 5.0,
+                },
+                box_line_width: 2.0,
+                note_color: Color::from_rgb8(0x4D, 0x4D, 0x4D),
+                important_color: Color::from_rgb8(254, 100, 11),
+                tip_color: Color::from_rgb8(4, 165, 229),
+                warning_color: Color::from_rgb8(223, 142, 29),
+                caution_color: Color::from_rgb8(210, 15, 57),
+                note_sign: "".to_string(),
+                important_sign: "".to_string(),
+                tip_sign: "󰛨".to_string(),
+                warning_sign: "".to_string(),
+                caution_sign: "".to_string(),
+            },
 
             paragraph_top_margin: 10.0,
 
@@ -147,6 +144,68 @@ impl MarkdowTheme {
             header_line_height: 2.0,
         }
     }
+}
+
+// TODO: I guess moving this into some commone types would be usefull???
+#[derive(Debug, Clone)]
+pub struct Margin {
+    pub top: f64,
+    pub right: f64,
+    pub bottom: f64,
+    pub left: f64,
+}
+
+// TODO: I guess moving this into some commone types would be usefull???
+#[derive(Debug, Clone)]
+pub struct Padding {
+    pub top: f64,
+    pub right: f64,
+    pub bottom: f64,
+    pub left: f64,
+}
+
+// Style for standard quotation
+//
+// Some text
+//
+//   |
+//   | Some cool qotation
+//   |
+//
+#[derive(Debug, Clone)]
+pub struct StandardQuotation {
+    pub margine: Margin,
+    pub line_horizontal_padding: f64,
+    pub line_width: f64,
+    pub color: Color,
+}
+
+// Style for box quotation (note/warning/highlight)
+//
+// Some text
+//
+//  +---+-------------------+
+//  | W | Some cool warning |
+//  +---+-------------------+
+//
+#[derive(Debug, Clone)]
+pub struct BoxQuotation {
+    pub margin: Margin,
+    pub box_padding: Padding,
+    pub symbol_padding: Padding,
+    pub box_line_width: f64,
+
+    pub note_color: Color,
+    pub important_color: Color,
+    pub tip_color: Color,
+    pub warning_color: Color,
+    pub caution_color: Color,
+
+    pub note_sign: String,
+    pub important_sign: String,
+    pub tip_sign: String,
+    pub warning_sign: String,
+    pub caution_sign: String,
 }
 
 pub fn get_theme<'a>() -> RwLockReadGuard<'a, Theme> {

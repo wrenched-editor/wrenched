@@ -21,12 +21,15 @@ pub struct LayoutContext<'a> {
     pub layout_ctx: &'a mut parley::LayoutContext<BrushIndex>,
 }
 
-impl <'a> LayoutContext<'a> {
-    pub fn new(font_ctx: &'a mut FontContext, layout_ctx: &'a mut parley::LayoutContext<BrushIndex>) -> LayoutContext<'a> {
-LayoutContext{
-    font_ctx,
-    layout_ctx,
-}
+impl<'a> LayoutContext<'a> {
+    pub fn new(
+        font_ctx: &'a mut FontContext,
+        layout_ctx: &'a mut parley::LayoutContext<BrushIndex>,
+    ) -> LayoutContext<'a> {
+        LayoutContext {
+            font_ctx,
+            layout_ctx,
+        }
     }
 }
 

@@ -2,9 +2,8 @@ use masonry::core::BrushIndex;
 use parley::{FontStyle, RangedBuilder, StyleProperty};
 use xilem::FontWeight;
 
-use crate::theme::Theme;
-
 use super::layouted_text::Brush;
+use crate::theme::Theme;
 
 #[derive(Clone, Debug)]
 pub struct BrushPalete {
@@ -17,17 +16,17 @@ impl BrushPalete {
             palete: vec![
                 Brush::just_text(theme.text.text_color),
                 Brush::just_text(theme.text.monospace_text_color),
-                Brush::just_text(theme.markdown.indentation_color),
-                Brush::just_text(theme.markdown.indentation_note_color),
-                Brush::just_text(theme.markdown.indentation_important_color),
-                Brush::just_text(theme.markdown.indentation_tip_color),
-                Brush::just_text(theme.markdown.indentation_warning_color),
-                Brush::just_text(theme.markdown.indentation_caution_color),
+                Brush::just_text(theme.markdown.standard_quotation.color),
+                Brush::just_text(theme.markdown.box_quotation.note_color),
+                Brush::just_text(theme.markdown.box_quotation.important_color),
+                Brush::just_text(theme.markdown.box_quotation.tip_color),
+                Brush::just_text(theme.markdown.box_quotation.warning_color),
+                Brush::just_text(theme.markdown.box_quotation.caution_color),
             ],
         }
     }
 
-    pub fn palete(&self) -> &[Brush]{
+    pub fn palete(&self) -> &[Brush] {
         &self.palete
     }
 
@@ -46,8 +45,7 @@ impl BrushPalete {
         theme: &Theme,
         builder: &mut RangedBuilder<'_, BrushIndex>,
     ) {
-        builder
-            .push_default(StyleProperty::Brush(BrushPalete::TEXT_BRUSH));
+        builder.push_default(StyleProperty::Brush(BrushPalete::TEXT_BRUSH));
         builder.push_default(StyleProperty::FontSize(theme.text.text_size as f32));
         builder.push_default(theme.text.font_stack.clone());
         builder.push_default(StyleProperty::FontWeight(FontWeight::NORMAL));
@@ -89,10 +87,7 @@ impl TextMarker {
                     ),
                     rang.clone(),
                 );
-                builder.push(
-                    StyleProperty::Brush(BrushPalete::CODE_BRUSH),
-                    rang,
-                );
+                builder.push(StyleProperty::Brush(BrushPalete::CODE_BRUSH), rang);
             }
         }
     }
@@ -105,4 +100,3 @@ pub enum MarkerKind {
     Strikethrough,
     InlineCode,
 }
-

@@ -4,16 +4,17 @@ pub mod parser;
 pub mod text;
 
 use std::{
-    path::{Path, PathBuf}, sync::Arc}
-;
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use accesskit::{Node, Role};
-use context::{MarkdownContext, SvgContext, LayoutContext};
+use context::{LayoutContext, MarkdownContext, SvgContext};
 use elements::{draw_flow, MarkdownContent};
-use kurbo::{Affine, Vec2};
+use kurbo::{Affine, Rect, Vec2};
 use masonry::core::{
-    AccessCtx, EventCtx, PaintCtx, PointerEvent, PropertiesMut,
-    PropertiesRef, RegisterCtx, Widget,
+    AccessCtx, EventCtx, PaintCtx, PointerEvent, PropertiesMut, PropertiesRef,
+    RegisterCtx, Widget,
 };
 use parser::parse_markdown;
 use peniko::BlendMode;
@@ -122,7 +123,8 @@ impl Widget for MarkdowWidget {
 
         let (font_ctx, layout_ctx) = ctx.text_contexts();
         let svg_ctx = SvgContext::new(self.fontdb.clone());
-        let mut layout_ctx: LayoutContext<'_> = LayoutContext::new(font_ctx, layout_ctx);
+        let mut layout_ctx: LayoutContext<'_> =
+            LayoutContext::new(font_ctx, layout_ctx);
         let mut markdown_ctx: MarkdownContext = MarkdownContext {
             svg_ctx: &svg_ctx,
             layout_ctx: &mut layout_ctx,
@@ -157,20 +159,22 @@ impl Widget for MarkdowWidget {
         let theme = &get_theme();
         let (font_ctx, layout_ctx) = ctx.text_contexts();
         let svg_ctx = SvgContext::new(self.fontdb.clone());
-        let mut layout_ctx: LayoutContext<'_> = LayoutContext::new(font_ctx, layout_ctx);
+        let mut layout_ctx: LayoutContext<'_> =
+            LayoutContext::new(font_ctx, layout_ctx);
         let mut markdown_ctx: MarkdownContext = MarkdownContext {
             svg_ctx: &svg_ctx,
             theme,
             layout_ctx: &mut layout_ctx,
         };
+        let element_box: Rect = Rect::from_origin_size(self.scroll.to_point(), size);
+        info!("MarkdowWidget::paint::element_box: {}", element_box);
         draw_flow(
             scene,
             &size,
             &mut markdown_ctx,
-            &self.scroll,
-            &size,
+            &element_box,
             &self.brush_palete,
-            &self.markdown_layout
+            &self.markdown_layout,
         );
         scene.pop_layer();
     }

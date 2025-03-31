@@ -4,7 +4,13 @@ use pulldown_cmark::{
 };
 use tracing::{error, warn};
 
-use super::{elements::MarkdownContent, text::styles::{MarkerKind, TextMarker}};
+use super::{
+    elements::MarkdownContent,
+    text::{
+        styles::{MarkerKind, TextMarker},
+        Link,
+    },
+};
 use crate::{
     layout_flow::LayoutFlow,
     markdown::{
@@ -17,19 +23,89 @@ use crate::{
 };
 
 pub struct MarkerState {
-    pub bold_start: usize,
-    pub italic_start: usize,
-    pub strikethrough_start: usize,
-    pub markers: Vec<TextMarker>,
+    bold_start: usize,
+    italic_start: usize,
+    strikethrough_start: usize,
+    markers: Vec<TextMarker>,
+    links: Vec<Link>,
+    link_url: String,
+    link_start: usize,
 }
 
 impl MarkerState {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             bold_start: 0,
             italic_start: 0,
             strikethrough_start: 0,
             markers: Vec::new(),
+            links: Vec::new(),
+            link_url: "".into(),
+            link_start: 0,
+        }
+    }
+
+    fn clear(&mut self) {
+        self.markers.clear();
+        self.links.clear();
+    }
+
+    fn process_marker(&mut self, event: &Event, text_end: usize) -> bool {
+        match event {
+            Event::Start(Tag::Strong) => {
+                self.bold_start = text_end;
+                true
+            }
+            Event::Start(Tag::Emphasis) => {
+                self.italic_start = text_end;
+                true
+            }
+            Event::Start(Tag::Strikethrough) => {
+                self.strikethrough_start = text_end;
+                true
+            }
+            Event::Start(Tag::Link {
+                link_type: _,
+                dest_url,
+                title: _,
+                id: _,
+            }) => {
+                self.link_url = dest_url.to_string();
+                self.link_start = text_end;
+                true
+            }
+            Event::End(TagEnd::Strong) => {
+                self.markers.push(TextMarker {
+                    start_pos: self.bold_start,
+                    end_pos: text_end,
+                    kind: MarkerKind::Bold,
+                });
+                true
+            }
+            Event::End(TagEnd::Emphasis) => {
+                self.markers.push(TextMarker {
+                    start_pos: self.strikethrough_start,
+                    end_pos: text_end,
+                    kind: MarkerKind::Italic,
+                });
+                true
+            }
+            Event::End(TagEnd::Strikethrough) => {
+                self.markers.push(TextMarker {
+                    start_pos: self.strikethrough_start,
+                    end_pos: text_end,
+                    kind: MarkerKind::Strikethrough,
+                });
+                true
+            }
+            Event::End(TagEnd::Link) => {
+                self.links.push(Link {
+                    url: self.link_url.clone(),
+                    index_range: self.link_start..text_end,
+                });
+                true
+            }
+            _ => false,
         }
     }
 }
@@ -40,52 +116,6 @@ impl Default for MarkerState {
     }
 }
 
-fn process_marker(
-    event: &Event,
-    marker_state: &mut MarkerState,
-    text_end: usize,
-) -> bool {
-    match event {
-        Event::Start(Tag::Strong) => {
-            marker_state.bold_start = text_end;
-            true
-        }
-        Event::Start(Tag::Emphasis) => {
-            marker_state.italic_start = text_end;
-            true
-        }
-        Event::Start(Tag::Strikethrough) => {
-            marker_state.strikethrough_start = text_end;
-            true
-        }
-        Event::End(TagEnd::Strong) => {
-            marker_state.markers.push(TextMarker {
-                start_pos: marker_state.bold_start,
-                end_pos: text_end,
-                kind: MarkerKind::Bold,
-            });
-            true
-        }
-        Event::End(TagEnd::Emphasis) => {
-            marker_state.markers.push(TextMarker {
-                start_pos: marker_state.strikethrough_start,
-                end_pos: text_end,
-                kind: MarkerKind::Italic,
-            });
-            true
-        }
-        Event::End(TagEnd::Strikethrough) => {
-            marker_state.markers.push(TextMarker {
-                start_pos: marker_state.strikethrough_start,
-                end_pos: text_end,
-                kind: MarkerKind::Strikethrough,
-            });
-            true
-        }
-        _ => false,
-    }
-}
-
 fn process_header_events<'a, T: BrokenLinkCallback<'a>>(
     events: &mut Parser<'a, T>,
     header_level: &HeadingLevel,
@@ -93,7 +123,7 @@ fn process_header_events<'a, T: BrokenLinkCallback<'a>>(
     let mut text = String::new();
     let mut marker_state = MarkerState::new();
     for event in events {
-        if process_marker(&event, &mut marker_state, text.len()) {
+        if marker_state.process_marker(&event, text.len()) {
             continue;
         }
         match event {
@@ -173,7 +203,6 @@ fn process_events<'a, T: BrokenLinkCallback<'a>>(
     let mut text = String::new();
     let mut marker_state = MarkerState::new();
     let mut inline_images = Vec::new();
-    let mut url: String = String::new();
 
     while let Some(event) = events.next() {
         println!("Event: {event:?}");
@@ -182,7 +211,7 @@ fn process_events<'a, T: BrokenLinkCallback<'a>>(
                 break;
             }
         }
-        if process_marker(&event, &mut marker_state, text.len()) {
+        if marker_state.process_marker(&event, text.len()) {
             continue;
         }
         match event {
@@ -257,7 +286,7 @@ fn process_events<'a, T: BrokenLinkCallback<'a>>(
                                 text.clone(),
                                 marker_state.markers.clone(),
                                 inline_images.clone(),
-                                Vec::new(),
+                                marker_state.links.clone(),
                             ),
                         )));
                         text.clear();
@@ -273,7 +302,7 @@ fn process_events<'a, T: BrokenLinkCallback<'a>>(
                         }
                     } else {
                         ListMarker::Symbol {
-                            symbol: "•".to_string().into(),
+                            symbol: Box::new("•".to_string().into()),
                         }
                     };
                     res.push(MarkdownContent::List(MarkdownList::new(list, marker)));
@@ -291,14 +320,6 @@ fn process_events<'a, T: BrokenLinkCallback<'a>>(
                 Tag::TableHead => todo!(),
                 Tag::TableRow => todo!(),
                 Tag::TableCell => todo!(),
-                Tag::Link {
-                    link_type: _,
-                    dest_url: _,
-                    title: _,
-                    id: _,
-                } => {
-                    //todo!()
-                }
                 Tag::MetadataBlock(_metadata_block_kind) => {
                     warn!("MetadataBlock in markdown are not supported")
                 }
@@ -314,11 +335,11 @@ fn process_events<'a, T: BrokenLinkCallback<'a>>(
                                     text.clone(),
                                     marker_state.markers.clone(),
                                     inline_images.clone(),
-                                    Vec::new(),
+                                    marker_state.links.clone(),
                                 ),
                             )));
                             text.clear();
-                            marker_state.markers.clear();
+                            marker_state.clear();
                             inline_images.clear();
                         }
                     }
@@ -327,7 +348,6 @@ fn process_events<'a, T: BrokenLinkCallback<'a>>(
                     TagEnd::TableHead => todo!(),
                     TagEnd::TableRow => todo!(),
                     TagEnd::TableCell => todo!(),
-                    TagEnd::Link => {} //todo!(),
                     e => {
                         warn!("Markdown parsing unprocessed end tag: {e:?}");
                     }

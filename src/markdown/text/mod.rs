@@ -1,18 +1,15 @@
 pub mod layouted_text;
-pub mod styles;
 pub mod simple;
+pub mod styles;
 
-use std::{f64, fmt, fs, ops::Range, path::Path};
+use std::{cmp::Ordering, f64, fmt, fs, ops::Range, path::Path};
 
 use kurbo::{Size, Vec2};
 use layouted_text::LayoutedText;
 use masonry::core::BrushIndex;
-use parley::{
-    InlineBox, StyleProperty,
-};
+use parley::{InlineBox, StyleProperty};
 use peniko::{Image, ImageFormat};
 use styles::{BrushPalete, TextMarker};
-use tracing::info;
 use vello::Scene;
 
 use super::context::{SvgContext, TextContext};
@@ -24,12 +21,13 @@ pub struct MarkdownText {
     markers: Vec<TextMarker>,
     inlined_images: Vec<InlinedImage>,
     links: Vec<Link>,
+    hovered_link: Option<usize>,
 }
 
 #[derive(Clone)]
 pub struct Link {
-    url: String,
-    index_range: Range<usize>,
+    pub url: String,
+    pub index_range: Range<usize>,
 }
 
 impl Link {
@@ -78,6 +76,36 @@ impl MarkdownText {
             markers,
             inlined_images,
             links,
+            hovered_link: None,
+        }
+    }
+
+    pub fn on_mouse_move(
+        &mut self,
+        text_ctx: &mut TextContext,
+        extra_default_styles: &[StyleProperty<BrushIndex>],
+        extra_styles: &[(StyleProperty<BrushIndex>, Range<usize>)],
+        width: f64,
+        point: &Vec2,
+    ) {
+        let cursor = self.text.cursor_position(point);
+        let index = cursor.index();
+        let hovered_link = self
+            .links
+            .binary_search_by(|v| {
+                // TODO: This comparison should probably use epsilon
+                if v.index_range.start <= index && v.index_range.end >= index {
+                    Ordering::Equal
+                } else if v.index_range.start < index {
+                    Ordering::Less
+                } else {
+                    Ordering::Greater
+                }
+            })
+            .ok();
+
+        if self.hovered_link != hovered_link {
+            self.build_layout(text_ctx, extra_default_styles, extra_styles, width);
         }
     }
 
@@ -178,28 +206,35 @@ impl MarkdownText {
         extra_styles: &[(StyleProperty<BrushIndex>, Range<usize>)],
         width: f64,
     ) {
-        self.text.build_layout(text_ctx.layout_ctx, text_ctx.theme.scale,Some(width) ,|builder| {
-            BrushPalete::fill_default_styles(text_ctx.theme, builder);
-            for extra_default_style in extra_default_styles {
-                builder.push_default(extra_default_style.clone());
-            }
-            for marker in self.markers.iter() {
-                marker.feed_to_builder(builder, text_ctx.theme);
-            }
-            for (extra_style, range) in extra_styles {
-                builder.push(extra_style.clone(), range.clone());
-            }
-            for (image_index, inlined_image) in self.inlined_images.iter().enumerate() {
-                if let Some(data) = &inlined_image.data {
-                    builder.push_inline_box(InlineBox {
-                        id: image_index as u64,
-                        index: inlined_image.text_index,
-                        width: data.width as f32,
-                        height: data.height as f32,
-                    });
+        self.text.build_layout(
+            text_ctx.layout_ctx,
+            text_ctx.theme.scale,
+            Some(width),
+            |builder| {
+                BrushPalete::fill_default_styles(text_ctx.theme, builder);
+                for extra_default_style in extra_default_styles {
+                    builder.push_default(extra_default_style.clone());
                 }
-            }
-        });
+                for marker in self.markers.iter() {
+                    marker.feed_to_builder(builder, text_ctx.theme);
+                }
+                for (extra_style, range) in extra_styles {
+                    builder.push(extra_style.clone(), range.clone());
+                }
+                for (image_index, inlined_image) in
+                    self.inlined_images.iter().enumerate()
+                {
+                    if let Some(data) = &inlined_image.data {
+                        builder.push_inline_box(InlineBox {
+                            id: image_index as u64,
+                            index: inlined_image.text_index,
+                            width: data.width as f32,
+                            height: data.height as f32,
+                        });
+                    }
+                }
+            },
+        );
     }
 
     // Loads inlined images and layouts the text with prepared box reserved for
@@ -226,7 +261,10 @@ impl MarkdownText {
             scene,
             scene_size,
             position,
-        |index| { let i = self.inlined_images.get(index as usize)?; i.data.as_ref()},
+            |index| {
+                let i = self.inlined_images.get(index as usize)?;
+                i.data.as_ref()
+            },
             &brush_palate.palete,
         );
     }
