@@ -195,6 +195,8 @@ impl MarkdownList {
         self.height
     }
 
+
+    #[allow(clippy::too_many_arguments)]
     fn paint_one_element(
         &self,
         scene: &mut Scene,
