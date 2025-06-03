@@ -6,6 +6,7 @@ pub mod text;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
+    time::Instant,
 };
 
 use accesskit::{Node, Role};
@@ -25,10 +26,11 @@ use usvg::fontdb;
 use vello::Scene;
 use xilem::{
     core::{Message, MessageResult, View, ViewMarker},
+    view::PointerButton,
     Pod, ViewCtx,
 };
 
-use crate::{layout_flow::LayoutFlow, theme::get_theme};
+use crate::{layout_flow::LayoutFlow, mouse_event::Click, theme::get_theme};
 
 pub struct MarkdowWidget {
     markdown_layout: LayoutFlow<MarkdownContent>,
@@ -37,6 +39,9 @@ pub struct MarkdowWidget {
     scroll: Vec2,
     fontdb: Arc<fontdb::Database>,
     brush_palete: BrushPalete,
+    primary_mouse_button_down: bool,
+    last_click_time: Option<Instant>,
+    click_count: u32,
 }
 
 impl MarkdowWidget {
@@ -72,6 +77,9 @@ impl MarkdowWidget {
             scroll: Vec2::new(0.0, 0.0),
             fontdb,
             brush_palete,
+            primary_mouse_button_down: false,
+            last_click_time: None,
+            click_count: 0,
         }
     }
 }
@@ -83,26 +91,69 @@ impl Widget for MarkdowWidget {
         event: &PointerEvent,
     ) {
         info!("event: {event:?} >>> ctx: {}", ctx.size());
-        if let PointerEvent::MouseWheel(delta, _) = event {
-            const SCROLLING_SPEED: f64 = 3.0;
-            let delta =
-                Vec2::new(delta.x * SCROLLING_SPEED, delta.y * SCROLLING_SPEED);
-            self.scroll += delta;
-            // TODO: horizontal scrolling
-            self.scroll.x = 0.0;
-            let bounding_box = ctx.bounding_rect();
-            info!("widget height: {}", bounding_box);
-            self.scroll.y = self.scroll.y.min(0.0);
-            self.scroll.y = self.scroll.y.max(
-                -self.markdown_layout.height() + bounding_box.height()
-                    - ctx.window_origin().y,
-            );
-            info!("scrolling new scroll: {} , self.markdown_layout.height() {}, ctx.size() {}", self.scroll, self.markdown_layout.height(), ctx.size());
-            if let Some(bla) = self.markdown_layout.flow.last() {
-                info!("bla.offset: {}", bla.offset);
+        let local_position =
+            event.local_position(ctx) + self.scroll.to_point().to_vec2();
+        match event {
+            PointerEvent::MouseWheel(delta, _) => {
+                const SCROLLING_SPEED: f64 = 3.0;
+                let delta =
+                    Vec2::new(delta.x * SCROLLING_SPEED, delta.y * SCROLLING_SPEED);
+                self.scroll += delta;
+                // TODO: horizontal scrolling
+                self.scroll.x = 0.0;
+                let bounding_box = ctx.bounding_rect();
+                info!("widget height: {}", bounding_box);
+                self.scroll.y = self.scroll.y.min(0.0);
+                self.scroll.y = self.scroll.y.max(
+                    -self.markdown_layout.height() + bounding_box.height()
+                        - ctx.window_origin().y,
+                );
+                info!("scrolling new scroll: {} , self.markdown_layout.height() {}, ctx.size() {}", self.scroll, self.markdown_layout.height(), ctx.size());
+                if let Some(bla) = self.markdown_layout.flow.last() {
+                    info!("bla.offset: {}", bla.offset);
+                }
+                ctx.request_paint_only();
+                ctx.set_handled();
             }
-            ctx.request_paint_only();
-            ctx.set_handled();
+            PointerEvent::PointerDown(button, pointer_state) => {
+                let theme = get_theme();
+                let now = Instant::now();
+                if let Some(last) = self.last_click_time.take() {
+                    if now.duration_since(last).as_secs_f64()
+                        < theme.multi_click_register_time
+                    {
+                        self.click_count = (self.click_count + 1) % 3;
+                    } else {
+                        self.click_count = 0;
+                    }
+                } else {
+                    self.click_count = 0;
+                }
+                self.last_click_time = Some(now);
+
+                // TODO: Think about this one. Maybe it should be behind some
+                // other things so it doesn't trigger some random drag-drop
+                // behaviour????
+                self.primary_mouse_button_down = true;
+
+                let click = Click::from_count(self.click_count);
+                ctx.request_focus();
+                ctx.capture_pointer();
+                // TODO: Check if the handled is set correctly
+                ctx.set_handled();
+            }
+            PointerEvent::PointerMove(pointer_state) => {
+                // TODO: Check if the handled is set correctly
+                ctx.set_handled();
+            }
+            PointerEvent::PointerUp(button, pointer_state) => {
+                if *button == PointerButton::Primary {
+                    self.primary_mouse_button_down = true;
+                }
+                // TODO: Check if the handled is set correctly
+                ctx.set_handled();
+            }
+            _ => {}
         }
     }
 

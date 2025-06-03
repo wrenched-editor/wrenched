@@ -6,6 +6,7 @@ pub mod command;
 pub mod generation;
 pub mod layout_flow;
 pub mod markdown;
+pub mod mouse_event;
 pub mod scene_utils;
 pub mod svg_fonts;
 pub mod theme;

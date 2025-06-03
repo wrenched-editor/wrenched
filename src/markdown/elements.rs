@@ -1,4 +1,5 @@
 use core::fmt;
+use std::ops::DerefMut;
 
 use kurbo::{Affine, Cap, Insets, Join, Line, Point, Rect, Size, Stroke, Vec2};
 use masonry::core::BrushIndex;
@@ -18,8 +19,36 @@ use super::{
 use crate::{
     basic_types::{Height, Width},
     layout_flow::{LayoutData, LayoutFlow},
+    mouse_event::Click,
     theme::{self, MarkdowTheme},
 };
+
+#[derive(Clone, Debug)]
+enum SelectionBase {
+    SimpleAnchor {
+    },
+    DoubleSidedAnchor {
+        second_anchor: Point,
+    }
+}
+
+#[derive(Clone, Debug)]
+struct Selection {
+    base: SelectionBase,
+    anchor: Point,
+}
+
+#[derive(Clone, Debug)]
+struct CursorAndSelection {
+    selection: Option<Selection>,
+    cursor: Point,
+}
+
+impl CursorAndSelection {
+    fn new(cursor: Point) -> Self {
+        Self { selection: None, cursor }
+    }
+}
 
 #[derive(Clone, Debug)]
 struct Margin {
@@ -75,6 +104,15 @@ impl Margin {
         f(&element_box);
     }
 
+    fn local_position<F, R>(&self, mut position: Point, f: F) -> R
+    where
+      F: FnOnce(Point) -> R,
+    {
+        position.x -= self.left;
+        position.y -= self.top;
+        f(position)
+    }
+
     fn height(&self) -> Height {
         self.top + self.bottom
     }
@@ -127,6 +165,15 @@ impl MarkdownList {
             indentation: 0.0,
             height: 0.0,
         }
+    }
+
+    pub fn on_mouse_move(
+        &mut self,
+        text_ctx: &mut TextContext,
+        width: f64,
+        point: Point,
+    ) {
+        // TODO: ...
     }
 
     fn layout(
@@ -194,7 +241,6 @@ impl MarkdownList {
     fn height(&self) -> f64 {
         self.height
     }
-
 
     #[allow(clippy::too_many_arguments)]
     fn paint_one_element(
@@ -307,6 +353,32 @@ impl Paragraph {
         }
     }
 
+    pub fn on_mouse_click(
+        &mut self,
+        selection: &mut CursorAndSelection,
+        text_ctx: &mut TextContext,
+        width: f64,
+        position: Point,
+        click: Click,
+    ) {
+        self.margin.local_position(position, |position: Point|{
+
+        });
+    }
+
+    pub fn on_mouse_move(
+        &mut self,
+        text_ctx: &mut TextContext,
+        width: f64,
+        point: Point,
+    ) {
+        self.text.on_mouse_move(text_ctx, &[], &[], width, point)
+    }
+
+    pub fn on_mouse_leave(&mut self, text_ctx: &mut TextContext, width: f64) {
+        self.text.on_mouse_leave(text_ctx, &[], &[], width)
+    }
+
     fn layout(
         &mut self,
         ctx: &mut MarkdownContext,
@@ -365,6 +437,15 @@ impl CodeBlock {
             margin: Margin::ZERO,
             _language: language,
         }
+    }
+
+    pub fn on_mouse_move(
+        &mut self,
+        text_ctx: &mut TextContext,
+        width: f64,
+        point: Point,
+    ) {
+        // TODO: ...
     }
 
     fn layout(&mut self, ctx: &mut MarkdownContext, width: Width) -> Height {
@@ -477,6 +558,9 @@ impl std::fmt::Debug for Indented {
     }
 }
 
+pub struct SelectionAnchor {
+}
+
 impl Indented {
     pub fn new(
         decoration: IndentationDecoration,
@@ -491,6 +575,26 @@ impl Indented {
             symbol: LayoutedText::empty(),
             height: 0.0,
         }
+    }
+
+    pub fn on_mouse_click(
+        &mut self,
+        text_ctx: &mut TextContext,
+        width: f64,
+        position: Point,
+        click: Click,
+    ) -> ()  {
+        // TODO:
+        todo!()
+    }
+
+    pub fn on_mouse_move(
+        &mut self,
+        text_ctx: &mut TextContext,
+        width: f64,
+        point: Point,
+    ) {
+        // TODO
     }
 
     fn layout(&mut self, ctx: &mut MarkdownContext, width: Width) -> Height {
@@ -714,6 +818,15 @@ impl Header {
         }
     }
 
+    pub fn on_mouse_move(
+        &mut self,
+        text_ctx: &mut TextContext,
+        width: f64,
+        point: Point,
+    ) {
+        // TODO: ...
+    }
+
     fn layout(
         &mut self,
         ctx: &mut MarkdownContext,
@@ -864,6 +977,102 @@ pub enum MarkdownContent {
 }
 
 impl MarkdownContent {
+    pub fn on_mouse_click(
+        &mut self,
+        text_ctx: &mut TextContext,
+        width: f64,
+        position: Point,
+        click: Click,
+    ) {
+        match self {
+            MarkdownContent::Indented(indented) => {
+                indented.on_mouse_click(text_ctx, width, position, click)
+            }
+            MarkdownContent::Header(header) => {
+                //header.on_mouse_move(text_ctx, width, point)
+                todo!()
+            }
+            MarkdownContent::List(markdown_list) => {
+                //markdown_list.on_mouse_move(text_ctx, width, point)
+                todo!()
+            }
+            MarkdownContent::Paragraph(paragraph) => {
+                //paragraph.on_mouse_click(text_ctx, width, position, click)
+                todo!()
+            }
+            MarkdownContent::CodeBlock(code_block) => {
+                //code_block.on_mouse_move(text_ctx, width, point)
+                todo!()
+            }
+            MarkdownContent::HorizontalLine(_horizontal_line) => {}
+        }
+    }
+    pub fn on_mouse_move(
+        &mut self,
+        text_ctx: &mut TextContext,
+        width: f64,
+        position: Point,
+    ) {
+        match self {
+            MarkdownContent::Indented(indented) => {
+                indented.on_mouse_move(text_ctx, width, position)
+            }
+            MarkdownContent::Header(header) => {
+                //header.on_mouse_move(text_ctx, width, position)
+                todo!()
+            }
+            MarkdownContent::List(markdown_list) => {
+                //markdown_list.on_mouse_move(text_ctx, width, position)
+                todo!()
+            }
+            MarkdownContent::Paragraph(paragraph) => {
+                paragraph.on_mouse_move(text_ctx, width, position)
+            }
+            MarkdownContent::CodeBlock(code_block) => {
+                //code_block.on_mouse_move(text_ctx, width, position)
+                todo!()
+            }
+            MarkdownContent::HorizontalLine(_horizontal_line) => {}
+        }
+    }
+
+    pub fn on_mouse_drag(
+        &mut self,
+        text_ctx: &mut TextContext,
+        width: f64,
+        point: Point,
+    ) {
+        match self {
+            MarkdownContent::Indented(indented) => {
+                todo!()
+            }
+            MarkdownContent::Header(header) => {
+                todo!()
+            }
+            MarkdownContent::List(markdown_list) => {
+                todo!()
+            }
+            MarkdownContent::Paragraph(paragraph) => {
+                todo!()
+            }
+            MarkdownContent::CodeBlock(code_block) => {
+                todo!()
+            }
+            MarkdownContent::HorizontalLine(_horizontal_line) => {}
+        }
+    }
+
+    pub fn on_mouse_leave(&mut self, text_ctx: &mut TextContext, width: f64) {
+        //match self {
+        //MarkdownContent::Indented(indented) => indented.on_mouse_leave(text_ctx, width),
+        //MarkdownContent::Header(header) => header.on_mouse_leave(text_ctx, width),
+        //MarkdownContent::List(markdown_list) => markdown_list.on_mouse_leave(text_ctx, width),
+        //MarkdownContent::Paragraph(paragraph) => paragraph.on_mouse_leave(text_ctx, width),
+        //MarkdownContent::CodeBlock(code_block) => code_block.on_mouse_leave(text_ctx, width),
+        //MarkdownContent::HorizontalLine(_horizontal_line) => {},
+        //}
+    }
+
     pub fn layout(
         &mut self,
         ctx: &mut MarkdownContext,
@@ -901,19 +1110,22 @@ impl MarkdownContent {
                 paragraph.paint(scene, scene_size, ctx, element_box, brush_palete);
             }
             MarkdownContent::CodeBlock(code_block) => {
-                code_block.paint(scene, scene_size, ctx, element_box, brush_palete);
+                //code_block.paint(scene, scene_size, ctx, element_box, brush_palete);
+                todo!()
             }
             MarkdownContent::Indented(indented) => {
                 indented.paint(scene, scene_size, ctx, element_box, brush_palete);
             }
             MarkdownContent::List(list) => {
-                list.paint(scene, scene_size, ctx, element_box, brush_palete);
+                //list.paint(scene, scene_size, ctx, element_box, brush_palete);
+                todo!()
             }
             MarkdownContent::HorizontalLine(horizontal_line) => {
-                horizontal_line.paint(scene, ctx, element_box);
+                //horizontal_line.paint(scene, ctx, element_box);
             }
             MarkdownContent::Header(header) => {
-                header.paint(scene, scene_size, ctx, element_box, brush_palete);
+                //header.paint(scene, scene_size, ctx, element_box, brush_palete);
+                todo!()
             }
         }
     }
@@ -970,5 +1182,49 @@ pub fn draw_flow(
         visible_part
             .data
             .paint(scene, scene_size, ctx, &element_box, brush_palete);
+    }
+}
+
+// Expects to be triggered by primary button actions
+pub fn flow_on_mouse_click(
+    flow: &mut LayoutFlow<MarkdownContent>,
+    text_ctx: &mut TextContext,
+    width: f64,
+    mut position: Point,
+    click: Click,
+) {
+    if let Some((mut data, local_y_position)) =
+        flow.get_mut_element_at_offset(position.y)
+    {
+        position.y = local_y_position;
+        data.on_mouse_click(text_ctx, width, position, click);
+    }
+}
+
+pub fn flow_on_mouse_move(
+    flow: &mut LayoutFlow<MarkdownContent>,
+    text_ctx: &mut TextContext,
+    width: f64,
+    mut position: Point,
+) {
+    if let Some((mut data, local_y_position)) =
+        flow.get_mut_element_at_offset(position.y)
+    {
+        position.y = local_y_position;
+        data.on_mouse_move(text_ctx, width, position);
+    }
+}
+
+pub fn flow_on_mouse_drag(
+    flow: &mut LayoutFlow<MarkdownContent>,
+    text_ctx: &mut TextContext,
+    width: f64,
+    mut position: Point,
+) {
+    if let Some((mut data, local_y_position)) =
+        flow.get_mut_element_at_offset(position.y)
+    {
+        position.y = local_y_position;
+        data.on_mouse_drag(text_ctx, width, position);
     }
 }

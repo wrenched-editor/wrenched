@@ -1,10 +1,9 @@
-use std::fmt;
+use std::{fmt, ops::Range};
 
 use kurbo::{Affine, BezPath, Cap, Join, Line, Point, Rect, Size, Stroke, Vec2};
 use masonry::core::BrushIndex;
 use parley::{
-    Alignment, Cluster, Cursor, Decoration, GlyphRun, Layout, LineMetrics,
-    PositionedLayoutItem, RangedBuilder, RunMetrics,
+    Affinity, Alignment, Cluster, Cursor, Decoration, GlyphRun, Layout, LineMetrics, PositionedLayoutItem, RangedBuilder, RunMetrics
 };
 use peniko::{BlendMode, Fill, Image};
 use vello::{peniko::Color, Scene};
@@ -39,10 +38,32 @@ impl Brush {
     }
 }
 
+#[derive(Clone, Debug,PartialEq, Eq)]
+pub struct Selection {
+    // Range of start and end bytes in text. (NOT the char index).
+    indices: Range<usize>,
+}
+
+impl Selection {
+    pub fn new(indices: Range<usize>) -> Selection {
+        Selection {
+            indices,
+        }
+    }
+
+    pub fn empty() -> Selection {
+        Selection {
+            indices: 0..0,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct LayoutedText {
     text: String,
     layout: Layout<BrushIndex>,
+    selection: Option<Selection>,
+    cursor: Option<Cursor>,
 }
 
 impl fmt::Debug for LayoutedText {
@@ -56,6 +77,8 @@ impl LayoutedText {
         Self {
             text: str,
             layout: Layout::new(),
+            selection: None,
+            cursor: None,
         }
     }
 
@@ -63,11 +86,21 @@ impl LayoutedText {
         Self {
             text: String::new(),
             layout: Layout::new(),
+            selection: None,
+            cursor: None,
         }
     }
 
-    pub fn cursor_position(&self, point: &Vec2) -> Cursor {
+    pub fn cursor_position(&self, point: &Point) -> Cursor {
         Cursor::from_point(&self.layout, point.x as f32, point.y as f32)
+    }
+
+    pub fn set_selection(&mut self, selection: Selection) {
+        self.selection = Some(selection);
+    }
+
+    pub fn remove_selection(&mut self) {
+        self.selection = None;
     }
 
     pub fn is_empty(&self) -> bool {
@@ -132,6 +165,8 @@ impl LayoutedText {
             scene,
             scene_size,
             position,
+            &self.selection,
+            self.cursor,
             get_image,
             brushes,
         );
@@ -143,12 +178,22 @@ pub fn draw_text<'a, F>(
     scene: &mut Scene,
     scene_size: &Size,
     position: &Vec2,
+    selection: &Option<Selection>,
+    cursor: Option<Cursor>,
     get_image: F,
     brushes: &[Brush],
 ) where
     F: Fn(u64) -> Option<&'a Image>,
 {
     let transform: Affine = Affine::translate(*position);
+
+    if let Some(selection) = selection {
+    }
+
+    if let Some(cursor) = cursor {
+        let cursor_rect = cursor.geometry(layout, 1.5);
+        scene.fill(Fill::NonZero, transform, Color::WHITE, None, &cursor_rect);
+    }
 
     // The start_y is in layout coordinates.
     let start_y = if position.y < 0.0 {

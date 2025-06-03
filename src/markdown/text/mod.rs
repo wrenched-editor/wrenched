@@ -4,16 +4,17 @@ pub mod styles;
 
 use std::{cmp::Ordering, f64, fmt, fs, ops::Range, path::Path};
 
-use kurbo::{Size, Vec2};
+use kurbo::{Point, Size, Vec2};
 use layouted_text::LayoutedText;
 use masonry::core::BrushIndex;
 use parley::{InlineBox, StyleProperty};
 use peniko::{Image, ImageFormat};
 use styles::{BrushPalete, TextMarker};
+use tracing::info;
 use vello::Scene;
 
 use super::context::{SvgContext, TextContext};
-use crate::basic_types::Height;
+use crate::{basic_types::Height, mouse_event::Click};
 
 #[derive(Clone)]
 pub struct MarkdownText {
@@ -80,15 +81,25 @@ impl MarkdownText {
         }
     }
 
+    pub fn on_mouse_click(
+        &mut self,
+        text_ctx: &mut TextContext,
+        width: f64,
+        position: Point,
+        click: Click,
+    ) {
+    }
+
     pub fn on_mouse_move(
         &mut self,
         text_ctx: &mut TextContext,
         extra_default_styles: &[StyleProperty<BrushIndex>],
         extra_styles: &[(StyleProperty<BrushIndex>, Range<usize>)],
         width: f64,
-        point: &Vec2,
+        point: Point,
     ) {
-        let cursor = self.text.cursor_position(point);
+        info!("on mouse move text");
+        let cursor = self.text.cursor_position(&point);
         let index = cursor.index();
         let hovered_link = self
             .links
@@ -105,6 +116,20 @@ impl MarkdownText {
             .ok();
 
         if self.hovered_link != hovered_link {
+            self.build_layout(text_ctx, extra_default_styles, extra_styles, width);
+        }
+    }
+
+    pub fn on_mouse_leave(
+        &mut self,
+        text_ctx: &mut TextContext,
+        extra_default_styles: &[StyleProperty<BrushIndex>],
+        extra_styles: &[(StyleProperty<BrushIndex>, Range<usize>)],
+        width: f64,
+    ) {
+        info!("on mouse leave text");
+        if self.hovered_link.is_some() {
+            self.hovered_link = None;
             self.build_layout(text_ctx, extra_default_styles, extra_styles, width);
         }
     }
@@ -220,6 +245,12 @@ impl MarkdownText {
                 }
                 for (extra_style, range) in extra_styles {
                     builder.push(extra_style.clone(), range.clone());
+                }
+                for link in self.links.iter() {
+                    builder.push(
+                        StyleProperty::Brush(BrushPalete::LINK_COLOR),
+                        link.index_range.clone(),
+                    );
                 }
                 for (image_index, inlined_image) in
                     self.inlined_images.iter().enumerate()

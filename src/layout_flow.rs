@@ -4,6 +4,10 @@ use std::{
     slice::Iter,
 };
 
+use kurbo::Point;
+
+use crate::mouse_event::Click;
+
 #[derive(Clone, Debug)]
 pub struct LayoutElement<Data> {
     // TODO: Change to Rect which has all offset(x,y), height, and width.
@@ -15,6 +19,7 @@ pub struct LayoutElement<Data> {
 // TODO: Rename this thing...
 #[derive(Clone, Default, Debug)]
 pub struct LayoutFlow<Data> {
+    // TODO: Move the scrolling mechanism here...
     pub(super) flow: Vec<LayoutElement<Data>>,
     height: f64,
 }
@@ -175,6 +180,37 @@ impl<Data: LayoutData> LayoutFlow<Data> {
             let element = &self.flow[index];
             let corelated_offset = offset - element.offset;
             (&element.data, corelated_offset)
+        })
+    }
+
+    /// This return an element with correlated coordinates within the element
+    pub fn get_mut_element_at_offset(
+        &mut self,
+        offset: f64,
+    ) -> Option<(MutableData<'_, Data>, f64)> {
+        let res = self
+            .flow
+            .binary_search_by(|v| {
+                // TODO: This comparison should probably use epsilon
+                if v.offset <= offset && v.offset + v.height >= offset {
+                    Ordering::Equal
+                } else if v.offset < offset {
+                    Ordering::Less
+                } else {
+                    Ordering::Greater
+                }
+            })
+            .ok();
+        res.map(|index| {
+            let element = &self.flow[index];
+            let corelated_offset = offset - element.offset;
+            (
+                MutableData {
+                    index,
+                    layout_flow: self,
+                },
+                corelated_offset,
+            )
         })
     }
 

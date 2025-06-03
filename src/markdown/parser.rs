@@ -292,6 +292,7 @@ fn process_events<'a, T: BrokenLinkCallback<'a>>(
                         text.clear();
                         marker_state.markers.clear();
                         inline_images.clear();
+                        marker_state.links.clear();
                     }
                     let list = process_list_events(events);
                     // TODO: Think about the markers. There should be a better way to set them up
@@ -409,7 +410,7 @@ fn process_events<'a, T: BrokenLinkCallback<'a>>(
                 text.clone(),
                 marker_state.markers.clone(),
                 inline_images.clone(),
-                Vec::new(),
+                marker_state.links.clone(),
             ),
         )));
     }

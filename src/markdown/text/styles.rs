@@ -22,6 +22,7 @@ impl BrushPalete {
                 Brush::just_text(theme.markdown.box_quotation.tip_color),
                 Brush::just_text(theme.markdown.box_quotation.warning_color),
                 Brush::just_text(theme.markdown.box_quotation.caution_color),
+                Brush::just_text(theme.markdown.box_quotation.caution_color),
             ],
         }
     }
@@ -40,6 +41,7 @@ impl BrushPalete {
     pub const TIP_BRUSH: BrushIndex = BrushIndex(5);
     pub const WARNING_BRUSH: BrushIndex = BrushIndex(6);
     pub const CAUTION_BRUSH: BrushIndex = BrushIndex(7);
+    pub const LINK_COLOR: BrushIndex = BrushIndex(8);
 
     pub fn fill_default_styles(
         theme: &Theme,

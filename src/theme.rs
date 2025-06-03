@@ -13,6 +13,9 @@ pub struct Theme {
     pub text: TextTheme,
     pub markdown: MarkdowTheme,
     pub generation: Generation,
+    // Time within the multiple click on mouse button will register...
+    // Used by double click and triple clicks.
+    pub multi_click_register_time: f64,
 }
 
 impl Theme {
@@ -25,6 +28,7 @@ impl Theme {
             text: TextTheme::new(),
             markdown: MarkdowTheme::new(),
             generation,
+            multi_click_register_time: 0.25,
         }
     }
 }
@@ -37,6 +41,8 @@ pub struct TextTheme {
     pub monospace_text_color: Color,
     pub text_size: u32,
     pub monospace_text_size: u32,
+    pub cursor_color: Color,
+    pub selection_color: Color,
 }
 
 impl TextTheme {
@@ -52,6 +58,8 @@ impl TextTheme {
             monospace_text_color: Color::from_rgb8(0xFF, 0x8C, 0x00),
             text_size: 16,
             monospace_text_size: 16,
+            cursor_color: Color::from_rgb8(0x55, 0x55, 0x55),
+            selection_color: Color::from_rgb8(0x15, 0x15, 0x15),
         }
     }
 }
@@ -77,6 +85,8 @@ pub struct MarkdowTheme {
     pub code_block_margin: f64,
 
     pub header_line_height: f32,
+
+    pub link_color: Color,
 }
 
 impl MarkdowTheme {
@@ -142,6 +152,8 @@ impl MarkdowTheme {
             code_block_margin: 10.0,
 
             header_line_height: 2.0,
+
+            link_color: Color::from_rgb8(0x00, 0x4D, 0x00),
         }
     }
 }
