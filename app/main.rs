@@ -28,15 +28,14 @@ use std::{
     time::Instant,
 };
 
+use winit::dpi::LogicalSize;
 use wrenched::{
     buffer::{Buffer, BufferView},
-    code_widget::code_view,
     markdown::markdown_view,
     utils::load_font_blobs_dir,
 };
 use xilem::{
-    view::{button, checkbox, flex, textbox, Axis},
-    EventLoop, EventLoopBuilder, WidgetView, Xilem,
+    EventLoop, EventLoopBuilder, WidgetView, WindowOptions, Xilem, view::{Axis::{self, Vertical}, button, checkbox, flex, flex_col, flex_row, label, text_input},
 };
 
 struct Task {
@@ -65,7 +64,7 @@ impl TaskList {
 }
 
 fn app_logic(task_list: &mut TaskList) -> impl WidgetView<TaskList> {
-    let input_box = textbox(
+    let input_box = text_input(
         task_list.next_task.clone(),
         |task_list: &mut TaskList, new_value| {
             task_list.next_task = new_value;
@@ -74,9 +73,9 @@ fn app_logic(task_list: &mut TaskList) -> impl WidgetView<TaskList> {
     .on_enter(|task_list: &mut TaskList, _| {
         task_list.add_task();
     });
-    let first_line = flex((
+    let first_line = flex_row((
         input_box,
-        button("Add task".to_string(), |task_list: &mut TaskList| {
+        button(label("Add task"), |task_list: &mut TaskList| {
             task_list.add_task();
         }),
     ))
@@ -94,17 +93,17 @@ fn app_logic(task_list: &mut TaskList) -> impl WidgetView<TaskList> {
                     data.tasks[i].done = checked;
                 },
             );
-            let delete_button = button("Delete", move |data: &mut TaskList| {
+            let delete_button = button(label("Delete"), move |data: &mut TaskList| {
                 data.tasks.remove(i);
             });
-            flex((checkbox, delete_button)).direction(Axis::Horizontal)
+            flex_row((checkbox, delete_button)).direction(Axis::Horizontal)
         })
         .collect::<Vec<_>>();
     //let code_view = code_view(&task_list.buffer_view, |_s: &mut TaskList| {});
     let markdown = markdown_view("test.md".into());
 
     //flex((first_line, tasks, code_view))
-    flex((first_line, tasks, markdown))
+    flex_col((first_line, tasks, markdown))
 }
 
 fn run(event_loop: EventLoopBuilder) -> eyre::Result<()> {
@@ -135,13 +134,20 @@ fn run(event_loop: EventLoopBuilder) -> eyre::Result<()> {
         buffer_view,
     };
 
+    let min_window_size = LogicalSize::new(200., 200.);
+    let window_size = LogicalSize::new(400., 500.);
+
     let font_blobs = load_font_blobs_dir("fonts/nerd-fonts")?;
-    let mut app = Xilem::new(data, app_logic);
+    let window_options = WindowOptions::new("Calculator").with_min_inner_size(min_window_size);
+    #[cfg(not(target_os = "ios"))]
+    let window_options = window_options.with_initial_inner_size(window_size);
+
+    let mut app = Xilem::new_simple(data, app_logic, window_options);
     for font_blob in font_blobs.into_iter() {
         app = app.with_font(font_blob);
     }
 
-    app.run_windowed(event_loop, "First Example".into())?;
+    app.run_in(event_loop)?;
     Ok(())
 }
 

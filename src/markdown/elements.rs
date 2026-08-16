@@ -1,13 +1,11 @@
 use core::fmt;
-use std::ops::DerefMut;
 
-use kurbo::{Affine, Cap, Insets, Join, Line, Point, Rect, Size, Stroke, Vec2};
 use masonry::core::BrushIndex;
-use parley::{Alignment, FontFamily, FontStack, StyleProperty};
+use parley::{Alignment, AlignmentOptions, FontFamily, FontStack, LineHeight::FontSizeRelative, StyleProperty};
 use peniko::Color;
 use pulldown_cmark::HeadingLevel;
-use vello::Scene;
-use xilem::FontWeight;
+use vello::{Scene, kurbo::{Cap, Insets, Join, Line, Point, Rect, Size, Stroke}};
+use xilem::{Affine, FontWeight, Vec2};
 
 use super::{
     context::{MarkdownContext, TextContext},
@@ -202,7 +200,7 @@ impl MarkdownList {
                     let mut str = (k as u32 + *start_number).to_string();
                     str.push('.');
                     let mut symbol: SimpleText = str.into();
-                    symbol.align(None, Alignment::End, false);
+                    symbol.align(None, Alignment::End, AlignmentOptions::default());
                     symbol.build_layout(&mut text_ctx, None);
                     let marker_width = symbol.full_width()
                         + ctx.theme.markdown.numbered_list_indentation
@@ -846,7 +844,7 @@ impl Header {
                 HeadingLevel::H5 => ctx.theme.text.text_size as f32 * 1.125,
                 HeadingLevel::H6 => ctx.theme.text.text_size as f32,
             }),
-            StyleProperty::LineHeight(ctx.theme.markdown.header_line_height),
+            StyleProperty::LineHeight(FontSizeRelative(ctx.theme.markdown.header_line_height)),
             StyleProperty::FontWeight(FontWeight::BOLD),
         ];
 
@@ -1110,22 +1108,22 @@ impl MarkdownContent {
                 paragraph.paint(scene, scene_size, ctx, element_box, brush_palete);
             }
             MarkdownContent::CodeBlock(code_block) => {
-                //code_block.paint(scene, scene_size, ctx, element_box, brush_palete);
-                todo!()
+                code_block.paint(scene, scene_size, ctx, element_box, brush_palete);
+                //todo!()
             }
             MarkdownContent::Indented(indented) => {
                 indented.paint(scene, scene_size, ctx, element_box, brush_palete);
             }
             MarkdownContent::List(list) => {
-                //list.paint(scene, scene_size, ctx, element_box, brush_palete);
-                todo!()
+                list.paint(scene, scene_size, ctx, element_box, brush_palete);
+                //todo!()
             }
             MarkdownContent::HorizontalLine(horizontal_line) => {
                 //horizontal_line.paint(scene, ctx, element_box);
             }
             MarkdownContent::Header(header) => {
-                //header.paint(scene, scene_size, ctx, element_box, brush_palete);
-                todo!()
+                header.paint(scene, scene_size, ctx, element_box, brush_palete);
+                //todo!()
             }
         }
     }

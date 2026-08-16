@@ -1,6 +1,7 @@
-use kurbo::{Affine, Rect, Shape, Size, Stroke};
-use peniko::{BlendMode, BrushRef, Color, Fill, Font, Image};
-use vello::{DrawGlyphs, Scene};
+use parley::FontData;
+use peniko::{BlendMode, BrushRef, Color, Fill, ImageBrushRef};
+use vello::{DrawGlyphs, Scene, kurbo::{Rect, Shape, Size, Stroke}};
+use xilem::Affine;
 
 pub struct SizedScene<'a> {
     pub scene: &'a mut Scene,
@@ -77,11 +78,11 @@ impl<'a> SizedScene<'a> {
             .stroke(style, transform, brush, brush_transform, shape);
     }
 
-    pub fn draw_image(&mut self, image: &Image, transform: Affine) {
+    pub fn draw_image<'b>(&mut self, image: impl Into<ImageBrushRef<'b>>, transform: Affine) {
         self.scene.draw_image(image, transform);
     }
 
-    pub fn draw_glyphs(&mut self, font: &Font) -> DrawGlyphs<'_> {
+    pub fn draw_glyphs(&mut self, font: &FontData) -> DrawGlyphs<'_> {
         self.scene.draw_glyphs(font)
     }
 

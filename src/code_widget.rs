@@ -3,22 +3,16 @@ use std::{
     time::Instant,
 };
 
-use accesskit::{Node, Role};
-use kurbo::{Point, Size, Vec2};
-use masonry::core::{
-    AccessCtx, AccessEvent, BoxConstraints, ComposeCtx, EventCtx, LayoutCtx,
-    PaintCtx, PointerEvent, PropertiesMut, PropertiesRef, QueryCtx, RegisterCtx,
-    TextEvent, Update, UpdateCtx, Widget, WidgetId,
-};
+use masonry::{accesskit::{Node, Role}, core::{
+    AccessCtx, AccessEvent, BoxConstraints, ComposeCtx, EventCtx, LayoutCtx, PaintCtx, PointerEvent, PropertiesMut, PropertiesRef, QueryCtx, RegisterCtx, TextEvent, Update, UpdateCtx, Widget, WidgetId, keyboard::{Key, NamedKey},
+}, kurbo::Size, widgets::TextAction};
 use parley::StyleProperty;
 use smallvec::SmallVec;
 use tracing::debug;
-use vello::{peniko::Color, Scene};
+use vello::{Scene, kurbo::Point, peniko::Color};
 use winit::window::CursorIcon;
 use xilem::{
-    core::{Message, MessageResult, View, ViewMarker},
-    view::PointerButton,
-    FontWeight, Pod, ViewCtx,
+    FontWeight, Pod, Vec2, ViewCtx, core::{MessageContext, MessageResult, Mut, View, ViewMarker}, view::PointerButton,
 };
 
 use crate::{
@@ -64,6 +58,8 @@ impl CodeWidget {
 
 // --- MARK: IMPL WIDGET ---
 impl Widget for CodeWidget {
+    type Action = ();
+
     fn on_pointer_event(
         &mut self,
         ctx: &mut EventCtx,
@@ -71,10 +67,10 @@ impl Widget for CodeWidget {
         event: &PointerEvent,
     ) {
         debug!("CodeWidget::on_pointer_event: {event:?}");
-        if let PointerEvent::PointerDown(PointerButton::Primary, pointer_state) =
-            event
+        if let PointerEvent::Down(pointer_event) = event
         {
-            let point = pointer_state.position;
+            if pointer_event.button == Some(PointerButton::Primary) {
+            let point = pointer_event.state.position;
             let window_origin = ctx.window_origin();
             debug!("CodeWidget::on_pointer_event; point: {point:?}");
             let cursor_point = self.text_layout.cursor_for_point(
@@ -87,8 +83,14 @@ impl Widget for CodeWidget {
             ctx.request_focus();
             ctx.request_paint_only();
             ctx.set_handled();
-        } else if let PointerEvent::MouseWheel(delta, _) = event {
-            self.text_layout.scroll(Vec2::new(delta.x, delta.y));
+            }
+        } else if let PointerEvent::Scroll(scroll_event) = event {
+            match scroll_event.delta {
+                masonry::core::ScrollDelta::PageDelta(x, y) => self.text_layout.scroll(Vec2::new(x as f64, y as f64)),
+                masonry::core::ScrollDelta::LineDelta(x, y) => self.text_layout.scroll(Vec2::new(x as f64, y as f64)),
+                masonry::core::ScrollDelta::PixelDelta(physical_position) => self.text_layout.scroll(Vec2::new(physical_position.x, physical_position.y)),
+            }
+            ;
             ctx.request_paint_only();
             ctx.set_handled();
         }
@@ -118,39 +120,36 @@ impl Widget for CodeWidget {
             };
         }
         match event {
-            TextEvent::KeyboardKey(key_event, _modifiers_state) => {
-                if !key_event.state.is_pressed() {
+            TextEvent::Keyboard(keyboard_event) => {
+                if !keyboard_event.state.is_down() {
                     return;
                 }
-                match &key_event.logical_key {
-                    winit::keyboard::Key::Named(named_key) => {
+                match &keyboard_event.key {
+                    Key::Named(named_key) => {
                         debug!("winit::keyboard::Key::Named: {:?}", named_key);
                         match named_key {
-                            winit::keyboard::NamedKey::Enter => {
+                            NamedKey::Enter => {
                                 process_key!(insert_new_line);
                             }
-                            winit::keyboard::NamedKey::Tab => {
+                            NamedKey::Tab => {
                                 process_key!(insert_at_point, "\t");
                             }
-                            winit::keyboard::NamedKey::Space => {
-                                process_key!(insert_at_point, " ");
-                            }
-                            winit::keyboard::NamedKey::ArrowUp => {
+                            NamedKey::ArrowUp => {
                                 process_key!(move_point_forward_line);
                             }
-                            winit::keyboard::NamedKey::ArrowDown => {
+                            NamedKey::ArrowDown => {
                                 process_key!(move_point_backward_line);
                             }
-                            winit::keyboard::NamedKey::ArrowLeft => {
+                            NamedKey::ArrowLeft => {
                                 process_key!(move_point_backward_char);
                             }
-                            winit::keyboard::NamedKey::ArrowRight => {
+                            NamedKey::ArrowRight => {
                                 process_key!(move_point_forward_char);
                             }
-                            winit::keyboard::NamedKey::Delete => {
+                            NamedKey::Delete => {
                                 process_key!(delete_at_point);
                             }
-                            winit::keyboard::NamedKey::Backspace => {
+                            NamedKey::Backspace => {
                                 self.text_changed = true;
                                 let mut buffer_view =
                                     self.buffer_view().lock().unwrap();
@@ -167,29 +166,20 @@ impl Widget for CodeWidget {
                             }
                         }
                     }
-                    winit::keyboard::Key::Character(str) => {
+                    Key::Character(str) => {
                         debug!("winit::keyboard::Key::Character: {}", str);
-                        process_key!(insert_at_point, str);
-                    }
-                    winit::keyboard::Key::Unidentified(native_key) => {
-                        debug!(
-                            "winit::keyboard::Key::Unidentified: {:?}",
-                            native_key
-                        )
-                    }
-                    winit::keyboard::Key::Dead(dead) => {
-                        debug!("winit::keyboard::Key::Dead: {:?}", dead)
+                        process_key!(insert_at_point, &str);
                     }
                 }
             }
             TextEvent::Ime(ime) => {
                 debug!("TextEvent::Ime: {:?}", ime)
             }
-            TextEvent::ModifierChange(modifiers_state) => {
-                debug!("TextEvent::ModifierChange: {:?}", modifiers_state)
-            }
             TextEvent::WindowFocusChange(focus) => {
                 debug!("TextEvent::WindowFocusChange: {}", focus)
+            }
+            TextEvent::ClipboardPaste(_) => {
+                debug!("TextEvent::ClipboardPaste")
             }
         }
     }
@@ -374,16 +364,16 @@ impl<F, State, Action> View<State, Action, ViewCtx> for CodeView<F>
 where
     State: 'static,
     Action: 'static,
-    F: Fn(&mut State) -> MessageResult<Action> + Send + Sync + 'static,
+    F: Fn(&mut State) -> Action + Send + Sync + 'static,
 {
     type Element = Pod<CodeWidget>;
 
     type ViewState = ();
 
-    fn build(&self, ctx: &mut ViewCtx) -> (Self::Element, Self::ViewState) {
+    fn build(&self, ctx: &mut ViewCtx, _app_state: &mut State) -> (Self::Element, Self::ViewState) {
         debug!("CodeView::build");
         ctx.with_leaf_action_widget(|ctx| {
-            ctx.new_pod(CodeWidget::new(&self.buffer_view))
+            ctx.create_pod(CodeWidget::new(&self.buffer_view))
         })
     }
 
@@ -393,6 +383,7 @@ where
         _view_state: &mut Self::ViewState,
         _ctx: &mut ViewCtx,
         _element: xilem::core::Mut<Self::Element>,
+        _app_state: &mut State,
     ) {
         debug!("CodeView::rebuild");
     }
@@ -410,27 +401,28 @@ where
     fn message(
         &self,
         _view_state: &mut Self::ViewState,
-        _id_path: &[xilem::core::ViewId],
-        message: Box<dyn Message>,
+        message: &mut MessageContext,
+        _element: Mut<'_, Self::Element>,
         app_state: &mut State,
-    ) -> xilem::core::MessageResult<Action, Box<dyn Message>> {
+    ) -> MessageResult<Action> {
         debug!("CodeView::message");
-        match message.downcast::<masonry::core::Action>() {
-            Ok(action) => {
-                if let masonry::core::Action::TextChanged(_text) = *action {
-                    (self.code_updated)(app_state)
-                } else {
+        match message.take_message::<TextAction>() {
+            Some(action) => match *action {
+                TextAction::Changed(_text) => {
+                    MessageResult::Action((self.code_updated)(app_state))
+                }
+                TextAction::Entered(text) => {
                     tracing::error!(
-                        "Wrong action type in CodeView::message: {action:?}"
+                        "Wrong action type in CodeView::message: {text:?}"
                     );
-                    MessageResult::Stale(action)
+                    MessageResult::Stale
                 }
             }
-            Err(message) => {
+            None => {
                 tracing::error!(
-                    "Wrong message type in Button::message: {message:?}"
+                    "Wrong message type in code widget"
                 );
-                MessageResult::Stale(message)
+                MessageResult::Stale
             }
         }
     }

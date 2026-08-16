@@ -4,9 +4,6 @@ use std::{
     slice::Iter,
 };
 
-use kurbo::Point;
-
-use crate::mouse_event::Click;
 
 #[derive(Clone, Debug)]
 pub struct LayoutElement<Data> {

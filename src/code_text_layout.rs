@@ -1,6 +1,5 @@
 use core::{f32, f64};
 
-use kurbo::{Affine, BezPath, Cap, Join, Line, Rect, Size, Stroke, Vec2};
 use parley::{
     fontique::{Collection, CollectionOptions},
     layout::Cursor,
@@ -10,11 +9,9 @@ use parley::{
 };
 use peniko::BlendMode;
 use vello::{
-    kurbo::Point,
-    peniko::{self, Color, Fill, Gradient},
-    Scene,
+    Scene, kurbo::{BezPath, Cap, Join, Line, Point, Rect, Size, Stroke}, peniko::{self, Color, Fill, Gradient},
 };
-use xilem::FontWeight;
+use xilem::{Affine, FontWeight, Vec2};
 
 use crate::theme::get_theme;
 
@@ -136,6 +133,7 @@ impl CodeTextLayout {
             &mut self.font_ctx,
             text,
             theme.scale,
+            true,
         );
         builder.push_default(StyleProperty::Brush(theme.text.text_color.into()));
         builder.push_default(StyleProperty::FontSize(theme.text.text_size as f32));
@@ -143,7 +141,7 @@ impl CodeTextLayout {
         builder.push_default(StyleProperty::FontWeight(FontWeight::NORMAL));
         builder.push_default(StyleProperty::FontStyle(FontStyle::Normal));
 
-        let mut builder = attributes(builder);
+        let builder = attributes(builder);
         builder.build_into(&mut self.layout, text);
         self.layout.break_all_lines(self.max_advance);
     }
@@ -316,6 +314,7 @@ impl CodeTextLayout {
             parley::Affinity::Upstream,
         );
         let cursor_rect = cursor.geometry(&self.layout, 1.5);
+        let cursor_rect = Rect {x0: cursor_rect.x0, x1: cursor_rect.x1, y0: cursor_rect.y0, y1: cursor_rect.y1};
         println!("self.scroll: {}", self.scroll);
         let transform = Affine::translate((0.0, -self.scroll));
         // TODO: Selection

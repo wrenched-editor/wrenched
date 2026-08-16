@@ -1,12 +1,12 @@
 use std::{fmt, ops::Range};
 
-use kurbo::{Affine, BezPath, Cap, Join, Line, Point, Rect, Size, Stroke, Vec2};
-use masonry::core::BrushIndex;
+use masonry::{core::BrushIndex};
 use parley::{
-    Affinity, Alignment, Cluster, Cursor, Decoration, GlyphRun, Layout, LineMetrics, PositionedLayoutItem, RangedBuilder, RunMetrics
+    Alignment, AlignmentOptions, Cluster, Cursor, Decoration, GlyphRun, Layout, LineMetrics, PositionedLayoutItem, RangedBuilder, RunMetrics
 };
-use peniko::{BlendMode, Fill, Image};
-use vello::{peniko::Color, Scene};
+use peniko::{BlendMode, Fill, ImageBrushRef};
+use vello::{Scene, kurbo::{BezPath, Cap, Join, Line, Point, Rect, Size, Stroke}, peniko::Color};
+use xilem::{Affine, Vec2};
 
 use crate::markdown::context::LayoutContext;
 
@@ -135,7 +135,7 @@ impl LayoutedText {
         // TODO: This is a bit fishy place to load images
         let mut builder: RangedBuilder<'_, BrushIndex> = text_ctx
             .layout_ctx
-            .ranged_builder(text_ctx.font_ctx, &self.text, scale);
+            .ranged_builder(text_ctx.font_ctx, &self.text, scale, true);
         style(&mut builder);
         self.layout = builder.build(&self.text);
         self.layout.break_all_lines(max_advance.map(|v| v as f32));
@@ -144,10 +144,10 @@ impl LayoutedText {
         &mut self,
         container_width: Option<f32>,
         alignment: Alignment,
-        align_when_overflowing: bool,
+        options: AlignmentOptions
     ) {
         self.layout
-            .align(container_width, alignment, align_when_overflowing);
+            .align(container_width, alignment, options);
     }
 
     pub fn draw_text<'a, F>(
@@ -158,7 +158,7 @@ impl LayoutedText {
         get_image: F,
         brushes: &[Brush],
     ) where
-        F: Fn(u64) -> Option<&'a Image>,
+        F: Fn(u64) -> Option<ImageBrushRef<'a>>,
     {
         draw_text(
             &self.layout,
@@ -183,15 +183,16 @@ pub fn draw_text<'a, F>(
     get_image: F,
     brushes: &[Brush],
 ) where
-    F: Fn(u64) -> Option<&'a Image>,
+    F: Fn(u64) -> Option<ImageBrushRef<'a>>,
 {
     let transform: Affine = Affine::translate(*position);
 
-    if let Some(selection) = selection {
+    if let Some(_selection) = selection {
     }
 
     if let Some(cursor) = cursor {
         let cursor_rect = cursor.geometry(layout, 1.5);
+        let cursor_rect = Rect {x0: cursor_rect.x0, x1: cursor_rect.x1, y0: cursor_rect.y0, y1: cursor_rect.y1};
         scene.fill(Fill::NonZero, transform, Color::WHITE, None, &cursor_rect);
     }
 

@@ -4,14 +4,14 @@ pub mod styles;
 
 use std::{cmp::Ordering, f64, fmt, fs, ops::Range, path::Path};
 
-use kurbo::{Point, Size, Vec2};
 use layouted_text::LayoutedText;
-use masonry::core::BrushIndex;
+use masonry::{core::BrushIndex};
 use parley::{InlineBox, StyleProperty};
-use peniko::{Image, ImageFormat};
+use peniko::{ImageAlphaType, ImageData, ImageSampler};
 use styles::{BrushPalete, TextMarker};
 use tracing::info;
-use vello::Scene;
+use vello::{Scene, kurbo::{Point, Size}};
+use xilem::{ImageBrush, ImageFormat, Vec2};
 
 use super::context::{SvgContext, TextContext};
 use crate::{basic_types::Height, mouse_event::Click};
@@ -40,7 +40,7 @@ impl Link {
 #[derive(Clone)]
 pub struct InlinedImage {
     url: String,
-    data: Option<Image>,
+    data: Option<ImageData>,
     text_index: usize,
 }
 
@@ -214,12 +214,14 @@ impl MarkdownText {
                     };
 
                 let (width, height) = image_data.dimensions();
-                inlined_image.data = Some(Image::new(
-                    image_data.to_vec().into(),
-                    ImageFormat::Rgba8,
+                inlined_image.data = Some(ImageData{
+                    data: image_data.to_vec().into(),
+                    format: ImageFormat::Rgba8,
+                    alpha_type: ImageAlphaType::Alpha,
                     width,
                     height,
-                ));
+                }
+                );
             }
         }
     }
@@ -280,7 +282,6 @@ impl MarkdownText {
         self.load_images(text_ctx.svg_ctx);
         self.build_layout(text_ctx, extra_default_styles, extra_styles, width);
     }
-
     pub fn draw_text(
         &self,
         scene: &mut Scene,
@@ -294,7 +295,7 @@ impl MarkdownText {
             position,
             |index| {
                 let i = self.inlined_images.get(index as usize)?;
-                i.data.as_ref()
+                i.data.as_ref().map(|v| ImageBrush{ image: v, sampler: ImageSampler::default() })
             },
             &brush_palate.palete,
         );

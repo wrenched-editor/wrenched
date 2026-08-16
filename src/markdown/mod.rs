@@ -9,25 +9,21 @@ use std::{
     time::Instant,
 };
 
-use accesskit::{Node, Role};
 use context::{LayoutContext, MarkdownContext, SvgContext};
 use elements::{draw_flow, MarkdownContent};
-use kurbo::{Affine, Rect, Vec2};
-use masonry::core::{
+use masonry::{accesskit::{self, Node, Role}, core::{
     AccessCtx, EventCtx, PaintCtx, PointerEvent, PropertiesMut, PropertiesRef,
     RegisterCtx, Widget,
-};
+}};
 use parser::parse_markdown;
 use peniko::BlendMode;
 use smallvec::SmallVec;
 use text::styles::BrushPalete;
 use tracing::{debug, info};
 use usvg::fontdb;
-use vello::Scene;
+use vello::{Scene, kurbo::{self, Point, Rect}};
 use xilem::{
-    core::{Message, MessageResult, View, ViewMarker},
-    view::PointerButton,
-    Pod, ViewCtx,
+    Affine, Pod, Vec2, ViewCtx, core::{MessageContext, MessageResult, Mut, View, ViewMarker}, view::PointerButton,
 };
 
 use crate::{layout_flow::LayoutFlow, mouse_event::Click, theme::get_theme};
@@ -84,6 +80,9 @@ impl MarkdowWidget {
     }
 }
 impl Widget for MarkdowWidget {
+
+    type Action = ();
+
     fn on_pointer_event(
         &mut self,
         ctx: &mut EventCtx,
@@ -91,10 +90,13 @@ impl Widget for MarkdowWidget {
         event: &PointerEvent,
     ) {
         info!("event: {event:?} >>> ctx: {}", ctx.size());
-        let local_position =
-            event.local_position(ctx) + self.scroll.to_point().to_vec2();
         match event {
-            PointerEvent::MouseWheel(delta, _) => {
+            PointerEvent::Scroll(scroll_event) => {
+                let delta = match scroll_event.delta {
+                    masonry::core::ScrollDelta::PageDelta(x, y) => Point::new(x as f64, y as f64),
+                    masonry::core::ScrollDelta::LineDelta(x, y) => Point::new(x as f64, y as f64),
+                    masonry::core::ScrollDelta::PixelDelta(physical_position) => Point::new(physical_position.x, physical_position.y),
+                };
                 const SCROLLING_SPEED: f64 = 3.0;
                 let delta =
                     Vec2::new(delta.x * SCROLLING_SPEED, delta.y * SCROLLING_SPEED);
@@ -115,7 +117,7 @@ impl Widget for MarkdowWidget {
                 ctx.request_paint_only();
                 ctx.set_handled();
             }
-            PointerEvent::PointerDown(button, pointer_state) => {
+            PointerEvent::Down(_down_event) => {
                 let theme = get_theme();
                 let now = Instant::now();
                 if let Some(last) = self.last_click_time.take() {
@@ -136,18 +138,18 @@ impl Widget for MarkdowWidget {
                 // behaviour????
                 self.primary_mouse_button_down = true;
 
-                let click = Click::from_count(self.click_count);
+                let _click = Click::from_count(self.click_count);
                 ctx.request_focus();
                 ctx.capture_pointer();
                 // TODO: Check if the handled is set correctly
                 ctx.set_handled();
             }
-            PointerEvent::PointerMove(pointer_state) => {
+            PointerEvent::Move(_move_event) => {
                 // TODO: Check if the handled is set correctly
                 ctx.set_handled();
             }
-            PointerEvent::PointerUp(button, pointer_state) => {
-                if *button == PointerButton::Primary {
+            PointerEvent::Up(up_event) => {
+                if up_event.button == Some(PointerButton::Primary) {
                     self.primary_mouse_button_down = true;
                 }
                 // TODO: Check if the handled is set correctly
@@ -299,10 +301,10 @@ where
 
     type ViewState = ();
 
-    fn build(&self, ctx: &mut ViewCtx) -> (Self::Element, Self::ViewState) {
+    fn build(&self, ctx: &mut ViewCtx, _app_state: &mut State) -> (Self::Element, Self::ViewState) {
         debug!("CodeView::build");
         ctx.with_leaf_action_widget(|ctx| {
-            ctx.new_pod(MarkdowWidget::new(&self.path))
+            ctx.create_pod(MarkdowWidget::new(&self.path))
         })
     }
 
@@ -312,6 +314,7 @@ where
         _view_state: &mut Self::ViewState,
         _ctx: &mut ViewCtx,
         _element: xilem::core::Mut<Self::Element>,
+        _app_state: &mut State,
     ) {
         debug!("CodeView::rebuild");
     }
@@ -329,24 +332,11 @@ where
     fn message(
         &self,
         _view_state: &mut Self::ViewState,
-        _id_path: &[xilem::core::ViewId],
-        message: Box<dyn Message>,
+        _message: &mut MessageContext,
+        _element: Mut<'_, Self::Element>,
         _app_state: &mut State,
-    ) -> xilem::core::MessageResult<Action, Box<dyn Message>> {
-        debug!("CodeView::message");
-        match message.downcast::<masonry::core::Action>() {
-            Ok(action) => {
-                tracing::error!(
-                    "Wrong action type in CodeView::message: {action:?}"
-                );
-                MessageResult::Stale(action)
-            }
-            Err(message) => {
-                tracing::error!(
-                    "Wrong message type in Button::message: {message:?}"
-                );
-                MessageResult::Stale(message)
-            }
-        }
+    ) -> xilem::core::MessageResult<Action> {
+        debug!("MarkdowView::message");
+        MessageResult::Nop
     }
 }

@@ -1,5 +1,5 @@
 use masonry::core::BrushIndex;
-use parley::{FontStyle, RangedBuilder, StyleProperty};
+use parley::{FontStyle, LineHeight::FontSizeRelative, RangedBuilder, StyleProperty};
 use xilem::FontWeight;
 
 use super::layouted_text::Brush;
@@ -52,7 +52,7 @@ impl BrushPalete {
         builder.push_default(theme.text.font_stack.clone());
         builder.push_default(StyleProperty::FontWeight(FontWeight::NORMAL));
         builder.push_default(StyleProperty::FontStyle(FontStyle::Normal));
-        builder.push_default(StyleProperty::LineHeight(1.0));
+        builder.push_default(StyleProperty::LineHeight(FontSizeRelative(1.0)));
     }
 }
 

@@ -1,6 +1,6 @@
-use kurbo::{Size, Vec2};
-use parley::Alignment;
-use vello::Scene;
+use parley::{Alignment, AlignmentOptions};
+use vello::{Scene, kurbo::Size};
+use xilem::Vec2;
 
 use super::{layouted_text::LayoutedText, styles::BrushPalete};
 use crate::markdown::context::TextContext;
@@ -66,10 +66,10 @@ impl SimpleText {
         &mut self,
         container_width: Option<f32>,
         alignment: Alignment,
-        align_when_overflowing: bool,
+        options: AlignmentOptions
     ) {
         self.text
-            .align(container_width, alignment, align_when_overflowing);
+            .align(container_width, alignment, options);
     }
 }
 
